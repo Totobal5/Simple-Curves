@@ -1,0 +1,41 @@
+{
+  "$GMProject":"v1",
+  "%Name":"Simple Curves",
+  "AudioGroups":[
+    {"$GMAudioGroup":"","%Name":"audiogroup_default","name":"audiogroup_default","resourceType":"GMAudioGroup","resourceVersion":"2.0","targets":-1,},
+  ],
+  "configs":{
+    "children":[],
+    "name":"Default",
+  },
+  "defaultScriptType":1,
+  "Folders":[
+    {"$GMFolder":"","%Name":"Extensions","folderPath":"folders/Extensions.yy","name":"Extensions","resourceType":"GMFolder","resourceVersion":"2.0",},
+    {"$GMFolder":"","%Name":"Rooms","folderPath":"folders/Rooms.yy","name":"Rooms","resourceType":"GMFolder","resourceVersion":"2.0",},
+  ],
+  "ForcedPrefabProjectReferences":[],
+  "IncludedFiles":[],
+  "isEcma":false,
+  "LibraryEmitters":[],
+  "MetaData":{
+    "IDEVersion":"2024.13.1.193",
+  },
+  "name":"Simple Curves",
+  "resources":[
+    {"id":{"name":"Simple_Curves_Animation","path":"animcurves/Simple_Curves_Animation/Simple_Curves_Animation.yy",},},
+    {"id":{"name":"Simple_Curves_License","path":"notes/Simple_Curves_License/Simple_Curves_License.yy",},},
+    {"id":{"name":"o_iamfade","path":"objects/o_iamfade/o_iamfade.yy",},},
+    {"id":{"name":"r_test","path":"rooms/r_test/r_test.yy",},},
+    {"id":{"name":"Simple_Curves","path":"scripts/Simple_Curves/Simple_Curves.yy",},},
+    {"id":{"name":"sp_iamfade","path":"sprites/sp_iamfade/sp_iamfade.yy",},},
+  ],
+  "resourceType":"GMProject",
+  "resourceVersion":"2.0",
+  "RoomOrderNodes":[
+    {"roomId":{"name":"r_test","path":"rooms/r_test/r_test.yy",},},
+  ],
+  "templateType":"game",
+  "TextureGroups":[
+    {"$GMTextureGroup":"","%Name":"Default","autocrop":true,"border":2,"compressFormat":"bz2","customOptions":"","directory":"","groupParent":null,"isScaled":true,"loadType":"default","mipsToGenerate":0,"name":"Default","resourceType":"GMTextureGroup","resourceVersion":"2.0","targets":-1,},
+  ],
+}

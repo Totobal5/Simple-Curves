@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"Simple_Curves",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"Simple_Curves",
+  "parent":{
+    "name":"Extensions",
+    "path":"folders/Extensions.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
