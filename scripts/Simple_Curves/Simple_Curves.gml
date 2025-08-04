@@ -1,11 +1,15 @@
 // Feather ignore all
 
+/// @ignore
+#macro SC_VERSION		"1.0"
+
+/// @ignore
+#macro SC_MIN_DELTA_FPS	15
+
 #macro SC_TYPE_ONCE		"once"
 #macro SC_TYPE_BOUNCE	"bounce"
 #macro SC_TYPE_PATROL	"patrol"
 #macro SC_TYPE_LOOP		"loop"
-
-#macro SC_MIN_DELTA_FPS	15
 
 /// @desc Gestor singleton para controlar todas las animaciones SCurve.
 function SCMaster()

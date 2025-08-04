@@ -5,8 +5,8 @@
   "isDnD":false,
   "name":"Simple_Curves",
   "parent":{
-    "name":"Extensions",
-    "path":"folders/Extensions.yy",
+    "name":"Simple Curves",
+    "path":"folders/Extensions/Simple Curves.yy",
   },
   "resourceType":"GMScript",
   "resourceVersion":"2.0",
