@@ -1,7 +1,7 @@
 // Feather ignore all
 
 /// @ignore
-#macro SC_VERSION		"1.0"
+#macro SC_VERSION		"2.0"
 
 /// @ignore
 #macro SC_MIN_DELTA_FPS	15
@@ -10,6 +10,21 @@
 #macro SC_TYPE_BOUNCE	"bounce"
 #macro SC_TYPE_PATROL	"patrol"
 #macro SC_TYPE_LOOP		"loop"
+
+enum SCURVE
+{
+    LINEAR,
+    EASE,
+    CUBIC,
+    QUART,
+    EXPO,
+    CIRC,
+    BACK,
+    ELASTIC,
+    BOUNCE,
+    FAST_SLOW,
+    MID_SLOW
+}
 
 /// @desc Gestor singleton para controlar todas las animaciones SCurve.
 function SCMaster()
@@ -145,9 +160,6 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	// Registrar esta instancia en el gestor global
 	SCMaster.Register(self);
 	
-	// Por default el target será quien lo cree.
-	Target(other);
-	
 	// Actualizar Delta al ser creado.
 	__Delta();
 	
@@ -184,10 +196,17 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	__repeats = 0;
 	__repeat_count = 0;
 	__launch_data = [];
-
-
+    
 	// Canal que se usará.
-	__channel_index =	animcurve_get_channel_index(Simple_Curves_Animation, _curve);
+    if (is_string(_curve) )
+    {
+	   __channel_index = animcurve_get_channel_index(Simple_Curves_Animation, _curve);
+    }
+    else if (is_numeric(_curve) )
+    {
+        __channel_index = _curve;	
+    }
+    
 	__channel_struct =	animcurve_get_channel(Simple_Curves_Animation, __channel_index);
 	__channel_struct_back = undefined;
 	
@@ -199,7 +218,10 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	__callback_delay_finish = undefined;	// Al final del delay
 	
 	__step = time_source_create(time_source_game, 1, time_source_units_frames, method(self, __Update), [], -1, time_source_expire_after);
-	
+
+    // Por default el target será quien lo cree.
+	Target(other);
+    	
 	#region Privates
 	/// @ignore
 	/// @desc El bucle principal de la animación, se ejecuta en cada fotograma.
@@ -507,6 +529,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	#region API
 	/// @desc Inicia la animación.
+    /// @return {Struct.SCurve} description
 	static Play = function()
 	{
 		var _time_state = time_source_get_state(__step);
@@ -532,7 +555,18 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		return self;		
 	}
 	
+	/// @desc Recaptura los valores iniciales de las propiedades desde el target actual.
+	///       Útil para SCurves reutilizables donde los valores pueden haber cambiado.
+	///       Debe llamarse ANTES de Play() para que tome efecto.
+	/// @return {Struct.SCurve}
+	static Refresh = function()
+	{
+		__InitializeProperties();
+		return self;
+	}
+	
 	/// @desc Detiene la animación.
+    /// @return {Struct.SCurve} description    
 	static Stop = function()
 	{
 		time_source_stop(__step);
@@ -540,6 +574,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	}
 	
 	/// @desc Pausa la animación.
+    /// @return {Struct.SCurve} description    
 	static Pause = function()
 	{
 		__pause = true;
@@ -547,6 +582,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	}
 	
 	/// @desc Reanuda la animación.
+    /// @return {Struct.SCurve} description
 	static Resume = function()
 	{
 		__pause = false;
@@ -568,6 +604,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	/// @desc Define el objetivo y la propiedad a animar.
 	/// @param {Id.Instance | Struct} target La instancia o struct a animar.
+    /// @return {Struct.SCurve} description
 	static Target = function(_target)
 	{	
 		__target = _target;
@@ -584,6 +621,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 	/// @desc Establece un retraso inicial para la animación.
 	/// @param {Real} seconds Tiempo de retraso en segundos.
+    /// @return {Struct.SCurve} description
 	static Delay = function(_seconds)
 	{
 		__delay = max(0, _seconds);
@@ -595,6 +633,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @param {String} prop1 El nombre de la primera variable a animar.
 	/// @param {Any} end1 El valor final de la primera propiedad.
 	/// @param {String} [prop2] ... y así sucesivamente.
+    /// @return {Struct.SCurve} description
 	static Once = function(_duration, _prop1, _end1)
 	{
 		if (__type != "") 
@@ -621,6 +660,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @param {String} prop1            El nombre de la primera variable a animar.
 	/// @param {Any}    end1             El valor final de la primera propiedad en la fase de "ida".
 	/// @param {String} [prop2]          ... y así sucesivamente para más propiedades.
+    /// @return {Struct.SCurve} description
 	static Patrol = function(_duration_go, _duration_back, _delay, _prop1, _end1)
 	{
 		if (__type != "") 
@@ -643,6 +683,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 	/// @desc Invierte la dirección de una animación de tipo Once.
 	/// @param {Bool} [is_reversed=true] Si la animación debe reproducirse en reversa.
+    /// @return {Struct.SCurve} description    
 	static Reverse = function(_is_reversed = true)
 	{
 		if (__type != "" && __type != SC_TYPE_ONCE)
@@ -699,6 +740,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	/// @desc Define cuantas veces se repetirá la animación.
 	/// @param {Real} count Número de repeticiones. -1 para infinito.
+    /// @return {Struct.SCurve} description
 	static Repeat = function(_count)
 	{
 	    // Si _count es <= 0, se asume repetición infinita (-1)
@@ -743,6 +785,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	/// @desc Define una función a llamar cuando la animación termina.
 	/// @param {Method} callback La función a ejecutar.
+    /// @return {Struct.SCurve} description
 	static OnFinish = function(_callback)
 	{
 		__callback_finish = _callback;
@@ -751,6 +794,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	/// @desc Define una función a llamar cuando la animación termina.
 	/// @param {Method} callback La función a ejecutar.
+    /// @return {Struct.SCurve} description
 	static OnContinue = function(_callback)
 	{
 		__callback_continue = _callback;
@@ -759,6 +803,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	/// @desc Define una función a llamar cuando la animación termina.
 	/// @param {Method} callback La función a ejecutar.
+    /// @return {Struct.SCurve} description
 	static OnWait = function(_callback)
 	{
 		__callback_wait = _callback;
@@ -766,6 +811,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	}
 
 	/// @desc Callback que se ejecuta en cada repetición completada.
+    /// @return {Struct.SCurve} description
 	static OnRepeat = function(_callback)
 	{
 	    __callback_repeat = _callback;
@@ -773,6 +819,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	}
 
 	/// @desc Callback que se ejecuta cuando el delay inicial termina.
+    /// @return {Struct.SCurve} description
 	static OnDelayFinish = function(_callback)
 	{
 	    __callback_delay_finish = _callback;

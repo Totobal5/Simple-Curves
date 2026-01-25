@@ -1,5 +1,5 @@
 {
-  "$GMNotes":"",
+  "$GMNotes":"v1",
   "%Name":"Simple_Curves_License",
   "name":"Simple_Curves_License",
   "parent":{
