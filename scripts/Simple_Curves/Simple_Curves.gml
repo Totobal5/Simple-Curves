@@ -1,7 +1,5 @@
-// Feather ignore all
-
-/// @ignore
-#macro SC_VERSION		"2.0"
+/// @ignore [MAJOR.MINOR.PATCH]
+#macro SC_VERSION	"2.2.0"
 
 /// @ignore
 #macro SC_MIN_DELTA_FPS	15
@@ -25,6 +23,8 @@ enum SCURVE
     FAST_SLOW,
     MID_SLOW
 }
+
+show_debug_message($"Simple Curves v{SC_VERSION} cargado correctamente.");
 
 /// @desc Gestor singleton para controlar todas las animaciones SCurve.
 function SCMaster()
@@ -51,19 +51,13 @@ function SCMaster()
 	/// @desc Pausa todas las animaciones activas.
 	static PauseAll = function()
 	{
-		for (var i = 0; i < array_length(list); i++)
-		{
-			list[i].Pause();
-		}
+		array_foreach(list, function(_scurve) { _scurve.Pause(); });
 	}
 	
 	/// @desc Reanuda todas las animaciones pausadas.
 	static ResumeAll = function()
 	{
-		for (var i = 0; i < array_length(list); i++)
-		{
-			list[i].Resume();
-		}
+		array_foreach(list, function(_scurve) { _scurve.Resume(); });
 	}
 	
 	/// @desc Establece una escala de tiempo global para todas las animaciones.
@@ -81,48 +75,39 @@ function SCMaster()
 	/// @desc Pausa todas las animaciones que contengan la etiqueta especificada.
 	static PauseTag = function(_tag)
 	{
-		for (var i = 0; i < array_length(list); i++)
-		{
-			if (list[i].HasTag(_tag)) list[i].Pause();
-		}
+		array_foreach(list, method({_tag}, function(_scurve) { if (_scurve.HasTag(_tag)) _scurve.Pause(); } ));
 	}
 	
 	/// @desc Reanuda todas las animaciones que contengan la etiqueta especificada.
 	static ResumeTag = function(_tag)
 	{
-		for (var i = 0; i < array_length(list); i++)
-		{
-			if (list[i].HasTag(_tag)) list[i].Resume();
-		}
+		array_foreach(list, method({_tag}, function(_scurve) { if (_scurve.HasTag(_tag)) _scurve.Resume(); } ));
 	}
 	
 	/// @desc Detiene todas las animaciones que contengan la etiqueta especificada.
 	static StopTag = function(_tag)
 	{
-		// Se itera hacia atrás porque Stop() modifica el array 'list'.
 		for (var i = array_length(list) - 1; i >= 0; i--)
 		{
-			if (list[i].HasTag(_tag)) list[i].Stop();
+			if (list[i].HasTag(_tag) ) list[i].Stop();
 		}
 	}
 	
 	/// @desc Destruye todas las animaciones que contengan la etiqueta especificada.
 	static DestroyTag = function(_tag)
 	{
-		// Se itera hacia atrás porque Destroy() modifica el array 'list'.
 		for (var i = array_length(list) - 1; i >= 0; i--)
 		{
-			if (list[i].HasTag(_tag)) list[i].Destroy();
+			if (list[i].HasTag(_tag) ) list[i].Destroy();
 		}
 	}
 	
 	/// @desc Establece la escala de tiempo para todas las animaciones con una etiqueta.
 	static SetTimeScaleByTag = function(_tag, _scale)
 	{
-		for (var i = 0; i < array_length(list); i++)
-		{
-			if (list[i].HasTag(_tag)) list[i].TimeScale(_scale);
-		}
+		array_foreach(list, method({_tag, _scale}, function(_scurve) { 
+			if (_scurve.HasTag(_tag)) _scurve.TimeScale(_scale); 
+		} ));
 	}
 
 	/// @desc Lanza una serie de animaciones con un retraso escalonado entre cada una.
@@ -182,9 +167,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	__tags = []; 
 	
 	// La instancia o struct a animar.
-	__target =			noone;
+	__target = noone;
 	// Array de structs: { name: "x", start: 0, end: 500 }
-	__properties =		[];
+	__properties = [];
 
 	__duration_back = 0;
 	__end_value_back = 0;
@@ -198,24 +183,28 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	__launch_data = [];
     
 	// Canal que se usará.
-    if (is_string(_curve) )
-    {
-	   __channel_index = animcurve_get_channel_index(Simple_Curves_Animation, _curve);
-    }
-    else if (is_numeric(_curve) )
-    {
-        __channel_index = _curve;	
-    }
+    __channel_index = _curve;	
     
 	__channel_struct =	animcurve_get_channel(Simple_Curves_Animation, __channel_index);
 	__channel_struct_back = undefined;
 	
 	// Definir callbacks.
-	__callback_finish = undefined;			// Al terminar.
-	__callback_wait = undefined;			// Al terminar la pausa en .Patrol().
-	__callback_continue = undefined;		// Al continuar.
-	__callback_repeat = undefined;			// Por cada cuenta.
-	__callback_delay_finish = undefined;	// Al final del delay
+
+	/// @desc Callback para cuando la animación termine. Si se han definido repeticiones, se ejecutará al finalizar la última repetición.
+	__callback_finish = undefined;
+	
+	/// @desc Callback para cuando un Patrol entre en su fase de espera entre la ida y la vuelta.
+	__callback_wait = undefined;
+	
+	/// @desc Callback para cuando un Patrol complete la fase de ida y comience la vuelta.
+	__callback_continue = undefined;
+	
+	/// @desc Callback que se ejecuta cada vez que se completa una repetición, recibiendo como argumento el número de repetición actual (empezando en 1).
+	/// @param {Real} repeat_count El número de repetición que se acaba de completar.
+	__callback_repeat = undefined;
+
+	/// @desc Callback que se ejecuta al finalizar el delay inicial, antes de comenzar la animación.
+	__callback_delay_finish = undefined;
 	
 	__step = time_source_create(time_source_game, 1, time_source_units_frames, method(self, __Update), [], -1, time_source_expire_after);
 
@@ -315,22 +304,23 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			{
 				__repeat_count++;
 				if (is_method(__callback_repeat) ) __callback_repeat(__repeat_count);
-						
-				for (var i = 0; i < array_length(__launch_data); i++) 
+				
+				var i=0; repeat(array_length(__launch_data) ) 
 				{
-					var _launch = __launch_data[i];
+					var _launch = __launch_data[i++];
 					if (is_struct(_launch.target) && _launch.on_repeat == __repeat_count)
 					{
 						_launch.target.Play();
 					}
 				}
-				
+
 				if (__repeat_count >= __repeats && __repeats != -1)
 				{
 					if (is_method(__callback_finish)) __callback_finish();
-					for (var i = 0; i < array_length(__launch_data); i++) 
+
+					repeat(array_length(__launch_data) )
 					{
-						var _launch = __launch_data[i];
+						var _launch = __launch_data[i++];
 						if (is_struct(_launch.target) && _launch.on_repeat == 0) 
 						{
 							_launch.target.Play();
@@ -348,9 +338,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			else
 			{
 				if (is_method(__callback_finish)) __callback_finish();
-				for (var i = 0; i < array_length(__launch_data); i++) 
+				var i=0; repeat(array_length(__launch_data) )
 				{
-					var _launch = __launch_data[i];
+					var _launch = __launch_data[i++];
 					if (is_struct(_launch.target) ) 
 					{
 						_launch.target.Play();
@@ -396,9 +386,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		var _eased_value = animcurve_channel_evaluate(_channel, _value);
 		
-		for (var i = 0; i < array_length(__properties); i++)
+		var i=0; repeat(array_length(__properties) )
 		{
-			var _prop =	__properties[i];
+			var _prop =	__properties[i++];
 			var _start = _prop.start;
 			var _end = _prop.finish;
 
@@ -469,7 +459,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	        case "*": return _base_value * _value;
 	        case "/": 
 	            if (_value == 0) {
-	                show_debug_message($"SCurve Warning: Division por sero en string relativo '{_relative_string}'.");
+	                show_debug_message($"SCurve Warning: Division por cero en string relativo '{_relative_string}'.");
 	                return _base_value;
 	            }
 	            return _base_value / _value;
@@ -487,9 +477,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		
 		if (is_struct(__target) || instance_exists(__target))
 		{
-			for (var i = 0; i < array_length(__properties); i++)
+			var i=0; repeat(array_length(__properties) )
 			{
-				var _prop = __properties[i];
+				var _prop = __properties[i++];
 				_prop.start = _get_var(__target, _prop.name);
 				
 				// Copiamos el valor final original por si es relativo y necesitamos recalcularlo
@@ -720,21 +710,23 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	        var _found = false;
 	
 	        // Busca la propiedad correspondiente en el array __properties
-	        for (var j = 0; j < array_length(__properties); j++)
-	        {
-	            if (__properties[j].name == _prop_name)
+			var j=0; repeat(array_length(__properties) )
+			{
+				var _prop = __properties[j++];
+	            if (_prop.name == _prop_name)
 	            {
-	                __properties[j].finish_back = _end_back_value;
+	                _prop.finish_back = _end_back_value;
 	                _found = true;
 	                break;
 	            }
-	        }
+			}
 	
 	        if (!_found)
 	        {
 	            show_debug_message($"SCurve Warning: Propiedad '{_prop_name}' no encontrada para definir valor de retorno en .ReturningTo().");
 	        }
 	    }
+
 	    return self;
 	}
 	
