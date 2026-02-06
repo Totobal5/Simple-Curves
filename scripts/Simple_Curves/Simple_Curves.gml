@@ -1,5 +1,9 @@
 /// @ignore [MAJOR.MINOR.PATCH]
-#macro SC_VERSION	"2.2.0"
+#macro SC_VERSION	"2.2.1"
+/// @ignore
+#macro SC_DEBUG_WARNING		true
+/// @ignore
+#macro SC_DEBUG_ERROR		true
 
 /// @ignore
 #macro SC_MIN_DELTA_FPS	15
@@ -435,6 +439,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		start = 0;
 		finish = _finish;
 		finish_back = undefined;
+
+		if (SC_DEBUG_WARNING) show_debug_message($"SCurve Info: Propiedad '{name}' configurada con valor final '{finish}'. El valor inicial se capturará al iniciar la animación.");
 	}
 	
 	/// @ignore
@@ -448,7 +454,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	    // Comprueba si la conversión falló (real() devuelve 0 para strings no numéricos)
 	    if (_value == 0 && _value_str != "0" && _value_str != ".0" && _value_str != "-0")
 	    {
-	        show_debug_message($"SCurve Error: Valor numerico invalido '{_value_str}' en string relativo '{_relative_string}'.");
+	        if (SC_DEBUG_ERROR) show_debug_message($"SCurve Error: Valor numerico invalido '{_value_str}' en string relativo '{_relative_string}'.");
 	        return _base_value; // En caso de error, devuelve el valor original
 	    }
     
@@ -459,7 +465,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	        case "*": return _base_value * _value;
 	        case "/": 
 	            if (_value == 0) {
-	                show_debug_message($"SCurve Warning: Division por cero en string relativo '{_relative_string}'.");
+	                if (SC_DEBUG_WARNING) show_debug_message($"SCurve Warning: Division por cero en string relativo '{_relative_string}'.");
 	                return _base_value;
 	            }
 	            return _base_value / _value;
@@ -540,7 +546,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			__pause = false;
 		}
 		
-		show_debug_message(_time_state);
+		if (SC_DEBUG_WARNING) show_debug_message($"SCurve Info: El estado del time-source({__step}) es: {_time_state}");
 		
 		return self;		
 	}
@@ -628,7 +634,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		if (__type != "") 
 		{
-			show_debug_message("SCurve Error: El tipo de animación (Once/Patrol) ya ha sido definido.");
+			if (SC_DEBUG_ERROR) show_debug_message("SCurve Error: El tipo de animación (Once/Patrol) ya ha sido definido.");
 			return self;
 		}
 		
@@ -655,7 +661,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		if (__type != "") 
 		{
-			show_debug_message("SCurve Error: El tipo de animación (Once/Patrol) ya ha sido definido.");
+			if (SC_DEBUG_ERROR) show_debug_message("SCurve Error: El tipo de animación (Once/Patrol) ya ha sido definido.");
 			return self;
 		}
 		
@@ -678,7 +684,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		if (__type != "" && __type != SC_TYPE_ONCE)
 		{
-			show_debug_message("SCurve Warning: .Reverse() solo tiene efecto en animaciones de tipo Once.");
+			if (SC_DEBUG_WARNING) show_debug_message("SCurve Warning: .Reverse() solo tiene efecto en animaciones de tipo Once.");
 			return self;
 		}
 		
@@ -699,7 +705,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 	    if (__type != SC_TYPE_PATROL)
 	    {
-	        show_debug_message("SCurve Warning: .ReturningTo() solo tiene efecto en animaciones de tipo Patrol.");
+	        if (SC_DEBUG_WARNING) show_debug_message("SCurve Warning: .ReturningTo() solo tiene efecto en animaciones de tipo Patrol.");
 	        return self;
 	    }
 	
@@ -723,7 +729,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	        if (!_found)
 	        {
-	            show_debug_message($"SCurve Warning: Propiedad '{_prop_name}' no encontrada para definir valor de retorno en .ReturningTo().");
+	            if (SC_DEBUG_WARNING) show_debug_message($"SCurve Warning: Propiedad '{_prop_name}' no encontrada para definir valor de retorno en .ReturningTo().");
 	        }
 	    }
 
