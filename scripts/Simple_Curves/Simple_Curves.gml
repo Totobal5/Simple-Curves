@@ -1,12 +1,11 @@
 /// @ignore [MAJOR.MINOR.PATCH]
-#macro SC_VERSION	"2.2.1"
+#macro __SC_VERSION	"2.2.3"
 /// @ignore
-#macro SC_DEBUG_WARNING		true
+#macro __SC_DEBUG_WARNING		true
 /// @ignore
-#macro SC_DEBUG_ERROR		true
-
+#macro __SC_DEBUG_ERROR		true
 /// @ignore
-#macro SC_MIN_DELTA_FPS	15
+#macro __SC_MIN_DELTA_FPS	15
 
 #macro SC_TYPE_ONCE		"once"
 #macro SC_TYPE_BOUNCE	"bounce"
@@ -28,7 +27,8 @@ enum SCURVE
     MID_SLOW
 }
 
-show_debug_message($"Simple Curves v{SC_VERSION} cargado correctamente.");
+show_debug_message($"Simple-Curves INFO::v{__SC_VERSION} cargado correctamente.");
+show_debug_message($"Simple-Curves INFO::Made by Toto (C.A).");
 
 /// @desc Gestor singleton para controlar todas las animaciones SCurve.
 function SCMaster()
@@ -142,7 +142,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	// --- Variables para la protección contra picos de lag ---
 	// Límite máximo para delta time (equivale a 15 FPS). Si el juego baja de esto, se activa la protección.
-	static __delta_max = 1 / SC_MIN_DELTA_FPS;
+	static __delta_max = 1 / __SC_MIN_DELTA_FPS;
 	// Bandera para saber si estamos en un estado de "lag".
 	static __delta_restored = false;
 
@@ -223,7 +223,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		// Actualizar delta.
 		__Delta();
 		
-		if (__pause) return;
+		if (__pause) exit;
 		
 		// Aplicar escala de tiempo global y local.
 		var _scaled_delta = __delta * __time_scale * SCMaster.GetGlobalTimeScale();
@@ -240,8 +240,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 				if (is_method(__callback_delay_finish) ) __callback_delay_finish();
 			}
 			
-			// No procesar nada más hasta que el delay termine.
-			return; 
+			exit; 
 		}
 		
 		switch (__type)
@@ -270,7 +269,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 					case "go":
 						__time += _scaled_delta;
 						__value = __time / __duration;
-						if (__value >= 1) {
+						if (__value >= 1)
+						{
 							__value = 1;
 							__patrol_state = "wait";
 							__time = 0;
@@ -281,7 +281,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 					
 					case "wait":
 						__time += _scaled_delta;
-						if (__time >= __delay_between) {
+						if (__time >= __delay_between)
+						{
 							__patrol_state = "back";
 							__time = 0;
 							if (is_method(__callback_wait)) __callback_wait();
@@ -291,7 +292,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 					case "back":
 						__time += _scaled_delta;
 						__value = __time / __duration_back;
-						if (__value >= 1) {
+						if (__value >= 1)
+						{
 							__value = 1;
 							_animation_finished = true;
 						}
@@ -372,6 +374,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			// Si el delta time es demasiado grande (caída de FPS)...
 			// Usamos un valor seguro para evitar un salto brusco en la animación.
 			__delta = __delta_restored ? __delta_max : __delta_previous;
+
 			// Marcamos que el sistema está en modo "restauración".
 			__delta_restored = true;
 		}
@@ -379,6 +382,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		{
 			// Si el rendimiento es normal, usamos el delta actual.
 			__delta = _current_delta;
+
 			// Desmarcamos el modo "restauración".
 			__delta_restored = false;
 		}
@@ -440,7 +444,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		finish = _finish;
 		finish_back = undefined;
 
-		if (SC_DEBUG_WARNING) show_debug_message($"SCurve Info: Propiedad '{name}' configurada con valor final '{finish}'. El valor inicial se capturará al iniciar la animación.");
+		if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves INFO::Propiedad '{name}' configurada con valor final '{finish}'. El valor inicial se capturará al iniciar la animación.");
 	}
 	
 	/// @ignore
@@ -454,7 +458,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	    // Comprueba si la conversión falló (real() devuelve 0 para strings no numéricos)
 	    if (_value == 0 && _value_str != "0" && _value_str != ".0" && _value_str != "-0")
 	    {
-	        if (SC_DEBUG_ERROR) show_debug_message($"SCurve Error: Valor numerico invalido '{_value_str}' en string relativo '{_relative_string}'.");
+	        if (__SC_DEBUG_ERROR) show_debug_message($"Simple-Curves ERROR::Valor numerico invalido '{_value_str}' en string relativo '{_relative_string}'.");
 	        return _base_value; // En caso de error, devuelve el valor original
 	    }
     
@@ -464,10 +468,12 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	        case "-": return _base_value - _value;
 	        case "*": return _base_value * _value;
 	        case "/": 
-	            if (_value == 0) {
-	                if (SC_DEBUG_WARNING) show_debug_message($"SCurve Warning: Division por cero en string relativo '{_relative_string}'.");
+	            if (_value == 0)
+				{
+	                if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves WARNING::Division por cero en string relativo '{_relative_string}'.");
 	                return _base_value;
 	            }
+
 	            return _base_value / _value;
 	    }
     
@@ -528,6 +534,12 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
     /// @return {Struct.SCurve} description
 	static Play = function()
 	{
+		if (!time_source_exists(__step))
+		{
+			if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.Play()' llamado sobre una SCurve destruida.");
+			return self;
+		}
+
 		var _time_state = time_source_get_state(__step);
 		if (_time_state == time_source_state_initial || _time_state == time_source_state_stopped)
 		{
@@ -546,7 +558,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			__pause = false;
 		}
 		
-		if (SC_DEBUG_WARNING) show_debug_message($"SCurve Info: El estado del time-source({__step}) es: {_time_state}");
+		if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves INFO::El estado del time-source({__step}) es: {_time_state}");
 		
 		return self;		
 	}
@@ -565,6 +577,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
     /// @return {Struct.SCurve} description    
 	static Stop = function()
 	{
+		if (!time_source_exists(__step)) return self;
+
 		time_source_stop(__step);
 		return self;
 	}
@@ -634,7 +648,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		if (__type != "") 
 		{
-			if (SC_DEBUG_ERROR) show_debug_message("SCurve Error: El tipo de animación (Once/Patrol) ya ha sido definido.");
+			if (__SC_DEBUG_ERROR) show_debug_message("Simple-Curves ERROR::El tipo de animación (Once/Patrol) ya ha sido definido.");
 			return self;
 		}
 		
@@ -661,7 +675,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		if (__type != "") 
 		{
-			if (SC_DEBUG_ERROR) show_debug_message("SCurve Error: El tipo de animación (Once/Patrol) ya ha sido definido.");
+			if (__SC_DEBUG_ERROR) show_debug_message("Simple-Curves ERROR::El tipo de animación (Once/Patrol) ya ha sido definido.");
 			return self;
 		}
 		
@@ -684,7 +698,13 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		if (__type != "" && __type != SC_TYPE_ONCE)
 		{
-			if (SC_DEBUG_WARNING) show_debug_message("SCurve Warning: .Reverse() solo tiene efecto en animaciones de tipo Once.");
+			if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.Reverse()' solo tiene efecto en animaciones de tipo Once.");
+			return self;
+		}
+
+		if (!time_source_exists(__step))
+		{
+			if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.Reverse()' llamado sobre una SCurve destruida.");
 			return self;
 		}
 		
@@ -705,7 +725,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 	    if (__type != SC_TYPE_PATROL)
 	    {
-	        if (SC_DEBUG_WARNING) show_debug_message("SCurve Warning: .ReturningTo() solo tiene efecto en animaciones de tipo Patrol.");
+	        if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.ReturningTo() solo tiene efecto en animaciones de tipo Patrol.");
 	        return self;
 	    }
 	
@@ -729,7 +749,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	
 	        if (!_found)
 	        {
-	            if (SC_DEBUG_WARNING) show_debug_message($"SCurve Warning: Propiedad '{_prop_name}' no encontrada para definir valor de retorno en .ReturningTo().");
+	            if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves WARNING::Propiedad '{_prop_name}' no encontrada para definir valor de retorno en .ReturningTo().");
 	        }
 	    }
 
@@ -824,11 +844,13 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	    return self;
 	}
 
-		#region State Queries.
+		#region STATE QUERIES
 	
 	/// @desc Devuelve true si la animación está activa y no pausada.
 	static IsPlaying = function()
 	{
+		if (!time_source_exists(__step)) return false;
+
 		return time_source_get_state(__step) == time_source_state_active && !__pause;
 	}
 	
@@ -841,6 +863,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @desc Devuelve true si la animación ha terminado o ha sido detenida.
 	static IsFinished = function()
 	{
+		if (!time_source_exists(__step)) return true;
+
 		return time_source_get_state(__step) == time_source_state_stopped;
 	}
 	
