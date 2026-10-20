@@ -31,9 +31,9 @@
 /// @desc Animation type of an SCurve.
 enum SC_TYPE
 {
-	/// @desc No animation configured yet.
+	/// No animation configured yet.
 	NONE,
-	/// @desc Single transition to the end value.
+	/// Single transition to the end value.
 	TO,
 	/// @desc Forward, wait and backward cycle.
 	PATROL

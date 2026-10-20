@@ -143,13 +143,14 @@ function test_config_patrol_sets_type_and_state()
 function test_config_setters_are_chainable()
 {
 	var _tween = __sc_test_tween({ x: 0 });
+	var _id = _tween.__id;
 
-	AssertEqual(_tween.Delay(0.1), _tween);
-	AssertEqual(_tween.TimeScale(2), _tween);
-	AssertEqual(_tween.Repeat(3), _tween);
-	AssertEqual(_tween.DestroyOnFinish(false), _tween);
-	AssertEqual(_tween.Tag("chain"), _tween);
-	AssertEqual(_tween.To(1, "x", 5), _tween);
+	AssertEqual(_tween.Delay(0.1).__id, _id, "Delay() must return the same tween");
+	AssertEqual(_tween.TimeScale(2).__id, _id, "TimeScale() must return the same tween");
+	AssertEqual(_tween.Repeat(3).__id, _id, "Repeat() must return the same tween");
+	AssertEqual(_tween.DestroyOnFinish(false).__id, _id, "DestroyOnFinish() must return the same tween");
+	AssertEqual(_tween.Tag("chain").__id, _id, "Tag() must return the same tween");
+	AssertEqual(_tween.To(1, "x", 5).__id, _id, "To() must return the same tween");
 }
 
 /// @desc is_scurve() recognizes tweens and rejects everything else.
