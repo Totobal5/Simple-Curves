@@ -1189,11 +1189,16 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			return self;
 		}
 
-		// One fixed argument (duration) followed by (property, end value) pairs.
-		if (argument_count < 3 || (argument_count - 1) mod 2 != 0)
+		// Validate every (property, end value) pair before mutating the tween.
+		// argument_count reports the declared parameter count when fewer arguments are passed,
+		// so a missing value has to be detected per pair.
+		for (var i = 1; i < argument_count; i += 2)
 		{
-			__scurve_error($"To() expects (property, end value) pairs. Received {argument_count} arguments.");
-			return self;
+			if (is_undefined(argument[i + 1]) || !is_string(argument[i]) )
+			{
+				__scurve_error($"To() expects (property, end value) pairs. Received {argument_count} arguments.");
+				return self;
+			}
 		}
 
 		__type = SC_TYPE.TO;
@@ -1232,14 +1237,19 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			return self;
 		}
 
-		// Three fixed arguments (go duration, back duration, delay) followed by (property, end value) pairs.
-		if (argument_count < 5 || (argument_count - 3) mod 2 != 0)
+		// Validate every (property, end value) pair before mutating the tween.
+		// argument_count reports the declared parameter count when fewer arguments are passed,
+		// so the missing value has to be detected per pair.
+		for (var i = 3; i < argument_count; i += 2)
 		{
-			__scurve_error($"Patrol() expects (property, end value) pairs. Received {argument_count} arguments.");
-			return self;
+			if (is_undefined(argument[i + 1]) || !is_string(argument[i]) )
+			{
+				__scurve_error($"Patrol() expects (property, end value) pairs. Received {argument_count} arguments.");
+				return self;
+			}
 		}
 
-		__type = SC_TYPE.PATROL;
+		__type = SC_TYPE_PATROL;
 		__duration = _duration_go;
 		__duration_back = _duration_back;
 		__delay_between = _delay;
@@ -1330,7 +1340,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	///       Accepts any number of (tween, repeat index) arguments; the index defaults to SC_LAUNCH_ON_FINISH.
 	/// @param {Struct.SCurve} ... Pairs of SCurve instances and repeat indexes.
 	/// @return {Struct.SCurve} this instance
-	static Launch = function(...)
+	static Launch = function()
 	{
 		var i = 0;
 		while (i < argument_count)

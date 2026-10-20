@@ -583,17 +583,22 @@ function test_life_state_before_play()
 
 #region ANIMATION (async)
 
+// Async cases cannot capture local variables in their callbacks: Crispy binds `self`
+// to the case and the closures are invoked from other scopes. Per-case state lives in
+// `self.sc` so both the builder and every callback can reach it.
+
 /// @desc To() reaches the exact end value and reports itself as finished.
 function test_anim_to_reaches_exact_end_async()
 {
-	var _target = { x: 0 };
-	var _tween = __sc_test_tween(_target).To(0.1, "x", 100).Play();
+	self.sc = { target: { x: 0 } };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.1, "x", 100).Play();
 
 	WaitStep(function()
 	{
+		var _tween = self.sc.tween;
 		if (!_tween.IsFinished() ) return false;
 
-		AssertEqual(_target.x, 100, "The final value must be exact");
+		AssertEqual(self.sc.target.x, 100, "The final value must be exact");
 		AssertNear(_tween.GetPhaseProgress(), 1, 0.0001);
 		AssertNear(_tween.GetProgress(), 1, 0.0001);
 
@@ -605,15 +610,15 @@ function test_anim_to_reaches_exact_end_async()
 /// @desc A tween with destroy_on_finish destroys itself and leaves the manager empty.
 function test_anim_autodestroy_on_finish_async()
 {
-	var _target = { x: 0 };
-	var _tween = new SCurve(SCURVE.LINEAR, true).Target(_target).To(0.1, "x", 10).Play();
+	self.sc = { target: { x: 0 } };
+	self.sc.tween = new SCurve(SCURVE.LINEAR, true).Target(self.sc.target).To(0.1, "x", 10).Play();
 
 	WaitStep(function()
 	{
-		if (_tween.IsValid() ) return false;
+		if (self.sc.tween.IsValid() ) return false;
 
-		AssertEqual(_target.x, 10, "The end value must be applied before destroying");
-		AssertFalse(_tween.IsPlaying() );
+		AssertEqual(self.sc.target.x, 10, "The end value must be applied before destroying");
+		AssertFalse(self.sc.tween.IsPlaying() );
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -621,17 +626,17 @@ function test_anim_autodestroy_on_finish_async()
 /// @desc Disabling auto-destroy keeps the tween alive and valid after finishing.
 function test_anim_survives_finish_without_autodestroy_async()
 {
-	var _target = { x: 0 };
-	var _tween = __sc_test_tween(_target).To(0.1, "x", 10).Play();
+	self.sc = { target: { x: 0 } };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.1, "x", 10).Play();
 
 	WaitStep(function()
 	{
-		if (!_tween.IsFinished() ) return false;
+		if (!self.sc.tween.IsFinished() ) return false;
 
-		AssertTrue(_tween.IsValid(), "The tween must remain usable");
-		AssertEqual(_target.x, 10);
+		AssertTrue(self.sc.tween.IsValid(), "The tween must remain usable");
+		AssertEqual(self.sc.target.x, 10);
 
-		_tween.Destroy();
+		self.sc.tween.Destroy();
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -639,26 +644,25 @@ function test_anim_survives_finish_without_autodestroy_async()
 /// @desc Patrol walks go -> wait -> back, fires each callback once and returns to the start value.
 function test_anim_patrol_callbacks_and_return_async()
 {
-	var _target = { x: 0 };
-	var _state = { waits: 0, backs: 0, order: "" };
+	self.sc = { target: { x: 0 }, waits: 0, backs: 0, order: "" };
 
-	var _tween = __sc_test_tween(_target)
+	self.sc.tween = __sc_test_tween(self.sc.target)
 		.Patrol(0.08, 0.05, 0.02, "x", 100)
-		.OnWait(function() { _state.waits++; _state.order += "w"; })
-		.OnBack(function() { _state.backs++; _state.order += "b"; })
+		.OnWait(method(self, function() { self.sc.waits++; self.sc.order += "w"; }) )
+		.OnBack(method(self, function() { self.sc.backs++; self.sc.order += "b"; }) )
 		.Play();
 
 	WaitStep(function()
 	{
-		if (!_tween.IsFinished() ) return false;
+		if (!self.sc.tween.IsFinished() ) return false;
 
-		AssertEqual(_state.waits, 1, "OnWait must fire once");
-		AssertEqual(_state.backs, 1, "OnBack must fire once");
-		AssertEqual(_state.order, "wb", "The wait phase must precede the back phase");
-		AssertNear(_target.x, 0, 0.0001, "Patrol must return to the start value");
-		AssertNear(_tween.GetProgress(), -1, 0.0001);
+		AssertEqual(self.sc.waits, 1, "OnWait must fire once");
+		AssertEqual(self.sc.backs, 1, "OnBack must fire once");
+		AssertEqual(self.sc.order, "wb", "The wait phase must precede the back phase");
+		AssertNear(self.sc.target.x, 0, 0.0001, "Patrol must return to the start value");
+		AssertNear(self.sc.tween.GetProgress(), -1, 0.0001);
 
-		_tween.Destroy();
+		self.sc.tween.Destroy();
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -666,17 +670,17 @@ function test_anim_patrol_callbacks_and_return_async()
 /// @desc Repeat(2) plays exactly two cycles.
 function test_anim_repeat_two_cycles_async()
 {
-	var _target = { x: 0 };
-	var _tween = __sc_test_tween(_target).To(0.05, "x", 10).Repeat(2).Play();
+	self.sc = { target: { x: 0 } };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.05, "x", 10).Repeat(2).Play();
 
 	WaitStep(function()
 	{
-		if (!_tween.IsFinished() ) return false;
+		if (!self.sc.tween.IsFinished() ) return false;
 
-		AssertEqual(_tween.GetRepeatCount(), 2, "Repeat(2) must complete two cycles");
-		AssertEqual(_target.x, 10);
+		AssertEqual(self.sc.tween.GetRepeatCount(), 2, "Repeat(2) must complete two cycles");
+		AssertEqual(self.sc.target.x, 10);
 
-		_tween.Destroy();
+		self.sc.tween.Destroy();
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -684,17 +688,17 @@ function test_anim_repeat_two_cycles_async()
 /// @desc An infinite repeat keeps cycling and never finishes on its own.
 function test_anim_repeat_infinite_async()
 {
-	var _target = { x: 0 };
-	var _tween = __sc_test_tween(_target).To(0.02, "x", 10).Repeat().Play();
+	self.sc = { target: { x: 0 } };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.02, "x", 10).Repeat().Play();
 
 	WaitStep(function()
 	{
-		if (_tween.GetRepeatCount() < 1) return false;
+		if (self.sc.tween.GetRepeatCount() < 1) return false;
 
-		AssertFalse(_tween.IsFinished(), "An infinite repeat must never finish");
-		AssertTrue(_tween.IsValid() );
+		AssertFalse(self.sc.tween.IsFinished(), "An infinite repeat must never finish");
+		AssertTrue(self.sc.tween.IsValid() );
 
-		_tween.Destroy();
+		self.sc.tween.Destroy();
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -702,38 +706,37 @@ function test_anim_repeat_infinite_async()
 /// @desc Pausing freezes the values and resuming continues the animation.
 function test_anim_pause_and_resume_async()
 {
-	var _target = { x: 0 };
-	var _phase = { step: 0, frozen: -1 };
-	var _tween = __sc_test_tween(_target).To(0.3, "x", 100).Play();
+	self.sc = { target: { x: 0 }, step: 0, frozen: -1 };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.3, "x", 100).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				_tween.Pause();
-				AssertTrue(_tween.IsPaused() );
-				_phase.frozen = _target.x;
-				_phase.step = 1;
+				self.sc.tween.Pause();
+				AssertTrue(self.sc.tween.IsPaused() );
+				self.sc.frozen = self.sc.target.x;
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				AssertNear(_target.x, _phase.frozen, 0.0001, "A paused tween must not advance");
-				_phase.step = 2;
+				AssertNear(self.sc.target.x, self.sc.frozen, 0.0001, "A paused tween must not advance");
+				self.sc.step = 2;
 				return false;
 
 			case 2:
-				AssertNear(_target.x, _phase.frozen, 0.0001, "A paused tween must not advance");
-				_tween.Resume();
-				AssertTrue(_tween.IsPlaying() );
-				_phase.step = 3;
+				AssertNear(self.sc.target.x, self.sc.frozen, 0.0001, "A paused tween must not advance");
+				self.sc.tween.Resume();
+				AssertTrue(self.sc.tween.IsPlaying() );
+				self.sc.step = 3;
 				return false;
 
 			case 3:
-				if (!_tween.IsFinished() ) return false;
+				if (!self.sc.tween.IsFinished() ) return false;
 
-				AssertEqual(_target.x, 100, "The tween must resume and finish");
-				_tween.Destroy();
+				AssertEqual(self.sc.target.x, 100, "The tween must resume and finish");
+				self.sc.tween.Destroy();
 				return true;
 		}
 
@@ -744,35 +747,34 @@ function test_anim_pause_and_resume_async()
 /// @desc Stop() halts the tween, and Play() restarts it from the beginning.
 function test_anim_stop_and_restart_async()
 {
-	var _target = { x: 0 };
-	var _phase = { step: 0, stopped_at: -1 };
-	var _tween = __sc_test_tween(_target).To(0.2, "x", 100).Play();
+	self.sc = { target: { x: 0 }, step: 0, stopped_at: -1 };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.2, "x", 100).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				if (_target.x <= 0) return false;
+				if (self.sc.target.x <= 0) return false;
 
-				_tween.Stop();
-				AssertTrue(_tween.IsFinished(), "Stop() must finish the tween");
-				_phase.stopped_at = _target.x;
-				_phase.step = 1;
+				self.sc.tween.Stop();
+				AssertTrue(self.sc.tween.IsFinished(), "Stop() must finish the tween");
+				self.sc.stopped_at = self.sc.target.x;
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				AssertNear(_target.x, _phase.stopped_at, 0.0001, "A stopped tween must not advance");
-				_tween.Play();
-				AssertTrue(_tween.IsPlaying(), "Play() must restart a stopped tween");
-				_phase.step = 2;
+				AssertNear(self.sc.target.x, self.sc.stopped_at, 0.0001, "A stopped tween must not advance");
+				self.sc.tween.Play();
+				AssertTrue(self.sc.tween.IsPlaying(), "Play() must restart a stopped tween");
+				self.sc.step = 2;
 				return false;
 
 			case 2:
-				if (!_tween.IsFinished() ) return false;
+				if (!self.sc.tween.IsFinished() ) return false;
 
-				AssertEqual(_target.x, 100, "The restarted tween must reach its end value");
-				_tween.Destroy();
+				AssertEqual(self.sc.target.x, 100, "The restarted tween must reach its end value");
+				self.sc.tween.Destroy();
 				return true;
 		}
 
@@ -783,28 +785,27 @@ function test_anim_stop_and_restart_async()
 /// @desc Reverse() while playing sends the tween back to its start value.
 function test_anim_reverse_midway_async()
 {
-	var _target = { x: 0 };
-	var _phase = { step: 0 };
-	var _tween = __sc_test_tween(_target).To(0.3, "x", 100).Play();
+	self.sc = { target: { x: 0 }, step: 0 };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.3, "x", 100).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				if (_target.x <= 0) return false;
+				if (self.sc.target.x <= 0) return false;
 
-				_tween.Reverse();
-				AssertTrue(_tween.IsReversed() );
-				_phase.step = 1;
+				self.sc.tween.Reverse();
+				AssertTrue(self.sc.tween.IsReversed() );
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				if (!_tween.IsFinished() ) return false;
+				if (!self.sc.tween.IsFinished() ) return false;
 
-				AssertNear(_target.x, 0, 0.0001, "A reversed tween must return to its start value");
-				AssertNear(_tween.GetProgress(), -1, 0.01, "A finished reverse tween reports full negative progress");
-				_tween.Destroy();
+				AssertNear(self.sc.target.x, 0, 0.0001, "A reversed tween must return to its start value");
+				AssertNear(self.sc.tween.GetProgress(), -1, 0.01, "A finished reverse tween reports full negative progress");
+				self.sc.tween.Destroy();
 				return true;
 		}
 
@@ -815,34 +816,33 @@ function test_anim_reverse_midway_async()
 /// @desc TimeScale(0) freezes the animation until the scale is restored.
 function test_anim_time_scale_zero_freezes_async()
 {
-	var _target = { x: 0 };
-	var _phase = { step: 0 };
-	var _tween = __sc_test_tween(_target).To(0.2, "x", 100).TimeScale(0).Play();
+	self.sc = { target: { x: 0 }, step: 0 };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.2, "x", 100).TimeScale(0).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				_phase.step = 1;
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				AssertEqual(_target.x, 0, "A zero time scale must freeze the tween");
-				_phase.step = 2;
+				AssertEqual(self.sc.target.x, 0, "A zero time scale must freeze the tween");
+				self.sc.step = 2;
 				return false;
 
 			case 2:
-				AssertEqual(_target.x, 0, "A zero time scale must keep the tween frozen");
-				_tween.TimeScale(1);
-				_phase.step = 3;
+				AssertEqual(self.sc.target.x, 0, "A zero time scale must keep the tween frozen");
+				self.sc.tween.TimeScale(1);
+				self.sc.step = 3;
 				return false;
 
 			case 3:
-				if (!_tween.IsFinished() ) return false;
+				if (!self.sc.tween.IsFinished() ) return false;
 
-				AssertEqual(_target.x, 100, "The tween must continue once the scale is restored");
-				_tween.Destroy();
+				AssertEqual(self.sc.target.x, 100, "The tween must continue once the scale is restored");
+				self.sc.tween.Destroy();
 				return true;
 		}
 
@@ -853,32 +853,30 @@ function test_anim_time_scale_zero_freezes_async()
 /// @desc Delay() postpones the animation and fires OnDelay once.
 function test_anim_delay_defer_start_async()
 {
-	var _target = { x: 0 };
-	var _state = { delays: 0 };
-	var _phase = { step: 0 };
+	self.sc = { target: { x: 0 }, step: 0, delays: 0 };
 
-	var _tween = __sc_test_tween(_target)
+	self.sc.tween = __sc_test_tween(self.sc.target)
 		.Delay(0.3)
 		.To(0.05, "x", 100)
-		.OnDelay(function() { _state.delays++; })
+		.OnDelay(method(self, function() { self.sc.delays++; }) )
 		.Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				AssertTrue(_tween.IsDelaying(), "The tween must be delaying right after Play()");
-				AssertEqual(_target.x, 0, "Nothing must move during the delay");
-				_phase.step = 1;
+				AssertTrue(self.sc.tween.IsDelaying(), "The tween must be delaying right after Play()");
+				AssertEqual(self.sc.target.x, 0, "Nothing must move during the delay");
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				if (!_tween.IsFinished() ) return false;
+				if (!self.sc.tween.IsFinished() ) return false;
 
-				AssertEqual(_state.delays, 1, "OnDelay must fire once");
-				AssertEqual(_target.x, 100);
-				_tween.Destroy();
+				AssertEqual(self.sc.delays, 1, "OnDelay must fire once");
+				AssertEqual(self.sc.target.x, 100);
+				self.sc.tween.Destroy();
 				return true;
 		}
 
@@ -889,32 +887,30 @@ function test_anim_delay_defer_start_async()
 /// @desc Launch() starts a queued tween when the parent finishes.
 function test_anim_launch_on_finish_async()
 {
-	var _parent_target = { x: 0 };
-	var _child_target = { x: 0 };
-	var _phase = { step: 0 };
+	self.sc = { parent_target: { x: 0 }, child_target: { x: 0 }, step: 0 };
 
-	var _child = __sc_test_tween(_child_target).To(0.05, "x", 50);
-	var _parent = __sc_test_tween(_parent_target).To(0.05, "x", 10).Launch(_child).Play();
+	self.sc.child = __sc_test_tween(self.sc.child_target).To(0.05, "x", 50);
+	self.sc.parent = __sc_test_tween(self.sc.parent_target).To(0.05, "x", 10).Launch(self.sc.child).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				if (!_parent.IsFinished() ) return false;
+				if (!self.sc.parent.IsFinished() ) return false;
 
-				AssertTrue(_child.IsPlaying() || _child.IsFinished(), "The child must be launched on finish");
-				_phase.step = 1;
+				AssertTrue(self.sc.child.IsPlaying() || self.sc.child.IsFinished(), "The child must be launched on finish");
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				if (!_child.IsFinished() ) return false;
+				if (!self.sc.child.IsFinished() ) return false;
 
-				AssertEqual(_parent_target.x, 10);
-				AssertEqual(_child_target.x, 50, "The child must reach its own end value");
+				AssertEqual(self.sc.parent_target.x, 10);
+				AssertEqual(self.sc.child_target.x, 50, "The child must reach its own end value");
 
-				_child.Destroy();
-				_parent.Destroy();
+				self.sc.child.Destroy();
+				self.sc.parent.Destroy();
 				return true;
 		}
 
@@ -925,32 +921,30 @@ function test_anim_launch_on_finish_async()
 /// @desc Launch(tween, cycle) starts a queued tween on a specific cycle.
 function test_anim_launch_on_repeat_async()
 {
-	var _parent_target = { x: 0 };
-	var _child_target = { x: 0 };
-	var _phase = { step: 0 };
+	self.sc = { parent_target: { x: 0 }, child_target: { x: 0 }, step: 0 };
 
-	var _child = __sc_test_tween(_child_target).To(0.05, "x", 50);
-	var _parent = __sc_test_tween(_parent_target).To(0.05, "x", 10).Repeat(2).Launch(_child, 1).Play();
+	self.sc.child = __sc_test_tween(self.sc.child_target).To(0.05, "x", 50);
+	self.sc.parent = __sc_test_tween(self.sc.parent_target).To(0.05, "x", 10).Repeat(2).Launch(self.sc.child, 1).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				if (_parent.GetRepeatCount() < 1) return false;
+				if (self.sc.parent.GetRepeatCount() < 1) return false;
 
-				AssertTrue(_child.IsPlaying() || _child.IsFinished(), "The child must be launched on the first cycle");
-				AssertFalse(_parent.IsFinished(), "The parent must still be cycling");
-				_phase.step = 1;
+				AssertTrue(self.sc.child.IsPlaying() || self.sc.child.IsFinished(), "The child must be launched on the first cycle");
+				AssertFalse(self.sc.parent.IsFinished(), "The parent must still be cycling");
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				if (!_child.IsFinished() ) return false;
+				if (!self.sc.child.IsFinished() ) return false;
 
-				AssertEqual(_child_target.x, 50);
+				AssertEqual(self.sc.child_target.x, 50);
 
-				_child.Destroy();
-				_parent.Destroy();
+				self.sc.child.Destroy();
+				self.sc.parent.Destroy();
 				return true;
 		}
 
@@ -961,24 +955,23 @@ function test_anim_launch_on_repeat_async()
 /// @desc OnStart and OnUpdate fire with the right arguments.
 function test_anim_start_and_update_callbacks_async()
 {
-	var _target = { x: 0 };
-	var _state = { starts: 0, updates: 0, last: -1 };
+	self.sc = { target: { x: 0 }, starts: 0, updates: 0, last: -1 };
 
-	var _tween = __sc_test_tween(_target)
+	self.sc.tween = __sc_test_tween(self.sc.target)
 		.To(0.08, "x", 10)
-		.OnStart(function() { _state.starts++; })
-		.OnUpdate(function(_progress) { _state.updates++; _state.last = _progress; })
+		.OnStart(method(self, function() { self.sc.starts++; }) )
+		.OnUpdate(method(self, function(_progress) { self.sc.updates++; self.sc.last = _progress; }) )
 		.Play();
 
 	WaitStep(function()
 	{
-		if (!_tween.IsFinished() ) return false;
+		if (!self.sc.tween.IsFinished() ) return false;
 
-		AssertEqual(_state.starts, 1, "OnStart must fire once");
-		AssertTrue(_state.updates > 0, "OnUpdate must fire every frame");
-		AssertNear(_state.last, 1, 0.0001, "OnUpdate must receive the applied progress");
+		AssertEqual(self.sc.starts, 1, "OnStart must fire once");
+		AssertTrue(self.sc.updates > 0, "OnUpdate must fire every frame");
+		AssertNear(self.sc.last, 1, 0.0001, "OnUpdate must receive the applied progress");
 
-		_tween.Destroy();
+		self.sc.tween.Destroy();
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -986,16 +979,16 @@ function test_anim_start_and_update_callbacks_async()
 /// @desc Relative end values resolve to absolute values when the tween starts.
 function test_anim_relative_end_value_async()
 {
-	var _target = { x: 10 };
-	var _tween = __sc_test_tween(_target).To(0.05, "x", "*1.5").Play();
+	self.sc = { target: { x: 10 } };
+	self.sc.tween = __sc_test_tween(self.sc.target).To(0.05, "x", "*1.5").Play();
 
 	WaitStep(function()
 	{
-		if (!_tween.IsFinished() ) return false;
+		if (!self.sc.tween.IsFinished() ) return false;
 
-		AssertEqual(_target.x, 15, "A relative end value must resolve against the captured start");
+		AssertEqual(self.sc.target.x, 15, "A relative end value must resolve against the captured start");
 
-		_tween.Destroy();
+		self.sc.tween.Destroy();
 		return true;
 	}).Timeout(10, "seconds");
 }
@@ -1003,27 +996,26 @@ function test_anim_relative_end_value_async()
 /// @desc A tween destroys itself when its target instance disappears mid-animation.
 function test_anim_target_destroyed_autodestroys_async()
 {
-	var _dummy = __sc_test_dummy_instance();
-	var _phase = { step: 0 };
+	self.sc = { step: 0, dummy: __sc_test_dummy_instance() };
 
-	AssertIsNotNoone(_dummy, "The dummy target instance must exist");
+	AssertIsNotNoone(self.sc.dummy, "The dummy target instance must exist");
 
-	var _tween = new SCurve(SCURVE.LINEAR, true).Target(_dummy).To(5, "image_alpha", 0.5).Play();
+	self.sc.tween = new SCurve(SCURVE.LINEAR, true).Target(self.sc.dummy).To(5, "image_alpha", 0.5).Play();
 
 	WaitStep(function()
 	{
-		switch (_phase.step)
+		switch (self.sc.step)
 		{
 			case 0:
-				AssertTrue(_tween.IsValid() );
+				AssertTrue(self.sc.tween.IsValid() );
 
-				with (_dummy) instance_destroy();
-				_phase.step = 1;
+				with (self.sc.dummy) instance_destroy();
+				self.sc.step = 1;
 				return false;
 
 			case 1:
-				AssertFalse(_tween.IsValid(), "The tween must destroy itself when the target disappears");
-				AssertFalse(_tween.IsPlaying() );
+				AssertFalse(self.sc.tween.IsValid(), "The tween must destroy itself when the target disappears");
+				AssertFalse(self.sc.tween.IsPlaying() );
 				return true;
 		}
 

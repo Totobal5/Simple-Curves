@@ -32,7 +32,7 @@
 enum SC_TYPE
 {
 	/// @desc No animation configured yet.
-	NONE = -1,
+	NONE,
 	/// @desc Single transition to the end value.
 	TO,
 	/// @desc Forward, wait and backward cycle.
