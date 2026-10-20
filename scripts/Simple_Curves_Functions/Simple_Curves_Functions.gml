@@ -11,17 +11,19 @@ function __scurve_alert(_msg)
 
 /// @ignore
 /// @desc Prints error messages when `SC_LOG_ERRORS` is active. If `SC_FATAL_ERRORS` is true, the game will crash on errors. Otherwise, errors will be logged but the game will continue.
+///       Both flags can be overridden at runtime through `SCMaster.SetLogErrors()` and `SCMaster.SetFatalErrors()`.
 /// @param {String} _msg The error message to display.
 function __scurve_error(_msg)
 {
-	if (SC_LOG_ERRORS || SC_FATAL_ERRORS)
-	{
-		var _origin = __scurve_origin();
+	var _log = SCMaster.GetLogErrors();
+	var _fatal = SCMaster.GetFatalErrors();
+	if (!_log && !_fatal) return;
 
-		show_debug_message($"Simple-Curves Error:: {_origin}: {_msg}");
-		// If strict mode is enabled crash the game with an error message to avoid silent failures.
-		if (SC_FATAL_ERRORS) { show_error($"Simple-Curves Fatal Error:: {_origin}: {_msg}", true); }
-	}
+	var _origin = __scurve_origin();
+
+	show_debug_message($"Simple-Curves Error:: {_origin}: {_msg}");
+	// Halt the game on errors unless fatal errors were disabled at runtime.
+	if (_fatal) show_error($"Simple-Curves Fatal Error:: {_origin}: {_msg}", true);
 }
 
 /// @desc Checks if a given struct is an instance of SCurve.

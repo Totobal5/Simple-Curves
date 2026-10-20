@@ -92,6 +92,58 @@ function SCMaster()
 	{
 		return __delta;
 	}
+
+	/// @ignore
+	/// @type {Bool}
+	/// @desc Runtime override of SC_LOG_ERRORS, used to silence expected errors.
+	static __log_errors = SC_LOG_ERRORS;
+
+	/// @ignore
+	/// @type {Bool}
+	/// @desc Runtime override of SC_FATAL_ERRORS, used to keep expected errors non-fatal.
+	static __fatal_errors = SC_FATAL_ERRORS;
+
+	/// @desc Overrides SC_LOG_ERRORS at runtime. Handy for test runs and release builds.
+	/// @param {Bool} _enabled Whether errors should be written to the output.
+	/// @return {Struct.SCMaster} this manager
+	static SetLogErrors = function(_enabled)
+	{
+		__log_errors = _enabled;
+		return self;
+	}
+
+	/// @desc Returns whether errors are currently written to the output.
+	/// @return {Bool} True when errors are logged.
+	static GetLogErrors = function()
+	{
+		return __log_errors;
+	}
+
+	/// @desc Overrides SC_FATAL_ERRORS at runtime. Handy for test runs and release builds.
+	/// @param {Bool} _enabled Whether an error should halt the game.
+	/// @return {Struct.SCMaster} this manager
+	static SetFatalErrors = function(_enabled)
+	{
+		__fatal_errors = _enabled;
+		return self;
+	}
+
+	/// @desc Returns whether errors currently halt the game.
+	/// @return {Bool} True when errors are fatal.
+	static GetFatalErrors = function()
+	{
+		return __fatal_errors;
+	}
+
+	/// @desc Returns whether the shared clock is currently running.
+	/// @return {Bool} True while the clock is ticking.
+	static IsClockRunning = function()
+	{
+		if (!time_source_exists(__clock) ) return false;
+
+		var _state = time_source_get_state(__clock);
+		return (_state == time_source_state_active || _state == time_source_state_paused);
+	}
 	
 	/// @ignore
 	/// @desc Registers an animation in the global list.
@@ -625,9 +677,6 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		// Trigger the repeat callback if defined.
 		if (is_callable(__callback_repeat) ) __callback_repeat(__repeat_count);
 
-		// Launch any SCurves that were set to launch on this repeat.
-		__LaunchPending(__repeat_count);
-
 		// Reached the repeat limit (or not repeating at all)?
 		if (__repeats != -1 && __repeat_count >= __repeats)
 		{
@@ -641,7 +690,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			exit;
 		}
 
-		// Cycles left: restart the phase (initial delay included).
+		// Launch any SCurves that were set to launch on this repeat, then start the next cycle.
+		__LaunchPending(__repeat_count);
 		__Reset();
 	}
 	

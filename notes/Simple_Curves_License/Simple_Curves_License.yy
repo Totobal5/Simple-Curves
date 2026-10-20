@@ -4,7 +4,7 @@
   "name":"Simple_Curves_License",
   "parent":{
     "name":"Simple Curves",
-    "path":"folders/Simple Curves.yy",
+    "path":"Simple Curves.yyp",
   },
   "resourceType":"GMNotes",
   "resourceVersion":"2.0",

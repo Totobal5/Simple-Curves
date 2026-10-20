@@ -215,6 +215,13 @@ Debug and strict behavior is configured via macros in `scripts/Simple_Curves_Set
 #macro SC_MIN_PHASE_DURATION 0.000001
 ```
 
+Both error flags can also be overridden at runtime, which is useful for release builds and test runs:
+
+```gml
+SCMaster.SetLogErrors(false);
+SCMaster.SetFatalErrors(false);
+```
+
 ## Convention Guide
 
 ### Tween Tags
@@ -280,6 +287,28 @@ SCMaster.ResumeTag("hud");
 - Tween property access uses hash-based struct accessors.
 - Delta protection avoids extreme jumps during lag spikes.
 - `SCURVE.LINEAR` path uses a fast branch without curve evaluation.
+
+## Tests
+
+The suite lives in `scripts/Simple_Curves_Tests/Simple_Curves_Tests.gml` and runs on top of [Crispy](https://github.com/Totobal5). Results are written to the Output window.
+
+Open the project, run it and the suites execute automatically. Press **Space** to run them again.
+
+`o_test_suite` is the trigger: its Create event builds the runner, its Step event pumps the asynchronous cases, and it doubles as a disposable target instance for the lifecycle tests.
+
+Suites:
+
+| Suite | Covers |
+|-------|--------|
+| `config` | Defaults, animation types, chainability and `is_scurve()` |
+| `guards` | Contract violations: invalid durations, argument pairs, tags, repeat counts and target swaps |
+| `relative` | Absolute and relative end values, decimals, fallback and `Refresh()` recalculation |
+| `tags` | Tag storage plus `PauseTag`/`ResumeTag`/`StopTag`/`DestroyTag`/`TimeScaleTag` |
+| `manager` | Registration count, shared clock lifecycle, `StopAll`/`DestroyAll`/`PauseAll` and global time scale |
+| `lifecycle` | `Destroy()` idempotency, released references and state before `Play()` |
+| `animation` | Frame-driven cases: end values, auto-destroy, Patrol phases, repeats, pause/resume, stop/restart, reverse, time scale, delay, `Launch`, callbacks and destroyed targets |
+
+Adding a test is a matter of defining one function whose name matches a suite prefix (`test_anim_...`, `test_guard_...`, ...). A name containing `_async` becomes a frame-driven case and receives `WaitStep`/`WaitBeginStep`/`WaitEndStep` checkpoints.
 
 ## License
 
