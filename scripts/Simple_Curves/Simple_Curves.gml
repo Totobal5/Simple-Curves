@@ -1249,7 +1249,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			}
 		}
 
-		__type = SC_TYPE_PATROL;
+		__type = SC_TYPE.PATROL;
 		__duration = _duration_go;
 		__duration_back = _duration_back;
 		__delay_between = _delay;
