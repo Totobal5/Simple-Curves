@@ -1,18 +1,5 @@
 /// @description
-if (!first)
-{
-	scurve.Play();
-	first = true;
-}
-else
-{
-	if (!scurve.IsReversed() )
-	{
-		scurve.Reverse(true).Play();
-	}	
-	else
-	{
-		scurve.Reverse(false).Play();	
-	}
-}
+test_reverse_next = !test_reverse_next;
+test_patrol.Reverse(test_reverse_next);
 
+if (test_patrol.IsFinished() ) { test_patrol.Play(); }

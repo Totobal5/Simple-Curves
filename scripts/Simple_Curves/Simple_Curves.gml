@@ -1,910 +1,1419 @@
-/// @ignore [MAJOR.MINOR.PATCH]
-#macro __SC_VERSION	"2.2.3"
-/// @ignore
-#macro __SC_DEBUG_WARNING		true
-/// @ignore
-#macro __SC_DEBUG_ERROR		true
-/// @ignore
-#macro __SC_MIN_DELTA_FPS	15
-
-#macro SC_TYPE_ONCE		"once"
-#macro SC_TYPE_BOUNCE	"bounce"
-#macro SC_TYPE_PATROL	"patrol"
-#macro SC_TYPE_LOOP		"loop"
-
-enum SCURVE
-{
-    LINEAR,
-    EASE,
-    CUBIC,
-    QUART,
-    EXPO,
-    CIRC,
-    BACK,
-    ELASTIC,
-    BOUNCE,
-    FAST_SLOW,
-    MID_SLOW
-}
-
-show_debug_message($"Simple-Curves INFO::v{__SC_VERSION} cargado correctamente.");
-show_debug_message($"Simple-Curves INFO::Made by Toto (C.A).");
-
-/// @desc Gestor singleton para controlar todas las animaciones SCurve.
+/// @desc Singleton manager used to control all SCurve animations.
 function SCMaster()
 {
-	static list = [];
-	static time_scale = 1.0;
-	
-	/// @desc Registra una animación en la lista global.
-	static Register = function(_scurve_instance)
+	/// @ignore
+	/// @type {Array<Struct.SCurve>}
+	/// @desc Global list of all active SCurve instances for management and control.
+	static __list = [];
+
+	/// @ignore
+	/// @type {Struct<Real, Struct.SCurve>}
+	/// @desc Registry of SCurve instances by their unique id, used for O(1) unregistration.
+	static __map = {};
+
+	/// @ignore
+	/// @type {Real}
+	static __time_scale = 1.0;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc Delta time (in seconds) of the current frame, shared by every SCurve.
+	static __delta = 0;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc Previous frame delta, used to smooth lag spikes.
+	static __delta_previous = 0;
+
+	/// @ignore
+	/// @type {Bool}
+	/// @desc Flag indicating whether delta is being restored after a lag spike.
+	static __delta_restored = false;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc The maximum allowed delta time to prevent lag spikes.
+	static __delta_max = 1 / SC_MIN_DELTA_FPS;
+
+	/// @ignore
+	/// @desc Updates the shared delta once per frame. Called by the manager clock.
+	static __TickClock = function()
 	{
-		array_push(list, _scurve_instance);
-	}
-	
-	/// @desc Elimina una animación de la lista global.
-	static Unregister = function(_scurve_instance)
-	{
-		var _index = array_get_index(list, _scurve_instance);
-		if (_index > -1)
+		var _previous_delta = SCMaster.__delta;
+		var _current_delta = delta_time / 1000000;
+
+		if (_current_delta > SCMaster.__delta_max)
 		{
-			array_delete(list, _index, 1);
+			// If delta time is too large (FPS drop), use a safe value to avoid abrupt animation jumps.
+			SCMaster.__delta = SCMaster.__delta_restored ? SCMaster.__delta_max : _previous_delta;
+			SCMaster.__delta_restored = true;
+		}
+		else
+		{
+			SCMaster.__delta = _current_delta;
+			SCMaster.__delta_restored = false;
 		}
 	}
+
+	/// @ignore
+	/// @type {Id.TimeSource}
+	/// @desc Single clock that drives every SCurve. Runs while at least one animation is registered.
+	static __clock = time_source_create(time_source_game, 1, time_source_units_frames, __TickClock, [], -1, time_source_expire_after);
+
+	/// @ignore
+	/// @desc Starts the shared clock if it is not already running.
+	static __StartClock = function()
+	{
+		if (!time_source_exists(__clock) ) return self;
+
+		var _state = time_source_get_state(__clock);
+		if (_state == time_source_state_initial || _state == time_source_state_stopped)
+		{
+			__delta_previous = delta_time / 1000000;
+			__delta = __delta_previous;
+			__delta_restored = false;
+			time_source_start(__clock);
+		}
+
+		return self;
+	}
+
+	/// @ignore
+	/// @desc Stops the shared clock when no animations remain registered.
+	static __StopClock = function()
+	{
+		if (time_source_exists(__clock) ) time_source_stop(__clock);
+		return self;
+	}
+
+	/// @desc Returns the shared delta time of the current frame, in seconds.
+	/// @return {Real} Delta time in seconds.
+	static GetDelta = function()
+	{
+		return __delta;
+	}
 	
-	/// @desc Pausa todas las animaciones activas.
+	/// @ignore
+	/// @desc Registers an animation in the global list.
+	/// @param {Struct.SCurve} scurve_instance The SCurve instance to register.
+	static __Register = function(_scurve_instance)
+	{
+		_scurve_instance.__slot = array_length(__list);
+		array_push(__list, _scurve_instance);
+		variable_struct_set(__map, string(_scurve_instance.__id), _scurve_instance);
+
+		__StartClock();
+
+		return self;
+	}
+	
+	/// @ignore
+	/// @desc Removes an animation from the global list.
+	/// @param {Struct.SCurve} scurve_instance The SCurve instance to remove.
+	static __Unregister = function(_scurve_instance)
+	{
+		var _key = string(_scurve_instance.__id);
+		if (!variable_struct_exists(__map, _key) ) return self;
+
+		variable_struct_remove(__map, _key);
+
+		// Swap-remove keeps unregistration O(1) instead of shifting the whole list.
+		var _slot = _scurve_instance.__slot;
+		var _last = array_length(__list) - 1;
+
+		if (_slot >= 0 && _slot <= _last)
+		{
+			if (_slot != _last)
+			{
+				__list[_slot] = __list[_last];
+				__list[_slot].__slot = _slot;
+			}
+
+			array_delete(__list, _last, 1);
+		}
+
+		_scurve_instance.__slot = -1;
+
+		if (array_length(__list) == 0) __StopClock();
+
+		return self;
+	}
+	
+	/// @desc Pauses all active animations.
 	static PauseAll = function()
 	{
-		array_foreach(list, function(_scurve) { _scurve.Pause(); });
+		array_foreach(__list, function(_scurve) { _scurve.Pause(); });
+		return self;
 	}
 	
-	/// @desc Reanuda todas las animaciones pausadas.
+	/// @desc Resumes all paused animations.
 	static ResumeAll = function()
 	{
-		array_foreach(list, function(_scurve) { _scurve.Resume(); });
+		array_foreach(__list, function(_scurve) { _scurve.Resume(); });
+		return self;
 	}
 	
-	/// @desc Establece una escala de tiempo global para todas las animaciones.
+	/// @desc Sets a global time scale for all animations.
+	/// @param {Real} scale Speed multiplier (1=normal, 0.5=half, 2=double).
 	static SetGlobalTimeScale = function(_scale)
 	{
-		time_scale = max(0, _scale);
+		__time_scale = max(0, _scale);
+		return self;
 	}
 	
-	/// @desc Obtiene la escala de tiempo global actual.
+	/// @desc Gets the current global time scale.
+	/// @return {Real} The global time scale.
 	static GetGlobalTimeScale = function()
 	{
-		return time_scale;
+		return __time_scale;
 	}
 
-	/// @desc Pausa todas las animaciones que contengan la etiqueta especificada.
+	/// @desc Pauses all animations that contain the specified tag.
+	/// @param {String} tag The tag to match.
 	static PauseTag = function(_tag)
 	{
-		array_foreach(list, method({_tag}, function(_scurve) { if (_scurve.HasTag(_tag)) _scurve.Pause(); } ));
+		for (var i = array_length(__list) - 1; i >= 0; i--)
+		{
+			var _scurve = __list[i];
+			if (_scurve.HasTag(_tag) ) _scurve.Pause();
+		}
+
+		return self;
 	}
 	
-	/// @desc Reanuda todas las animaciones que contengan la etiqueta especificada.
+	/// @desc Resumes all animations that contain the specified tag.
+	/// @param {String} tag The tag to match.
 	static ResumeTag = function(_tag)
 	{
-		array_foreach(list, method({_tag}, function(_scurve) { if (_scurve.HasTag(_tag)) _scurve.Resume(); } ));
+		for (var i = array_length(__list) - 1; i >= 0; i--)
+		{
+			var _scurve = __list[i];
+			if (_scurve.HasTag(_tag) ) _scurve.Resume();
+		}
+
+		return self;
 	}
 	
-	/// @desc Detiene todas las animaciones que contengan la etiqueta especificada.
+	/// @desc Stops all animations that contain the specified tag.
+	/// @param {String} tag The tag to match.
 	static StopTag = function(_tag)
 	{
-		for (var i = array_length(list) - 1; i >= 0; i--)
+		for (var i = array_length(__list) - 1; i >= 0; i--)
 		{
-			if (list[i].HasTag(_tag) ) list[i].Stop();
+			var _scurve = __list[i];
+			if (_scurve.HasTag(_tag) ) _scurve.Stop();
 		}
+
+		return self;
 	}
 	
-	/// @desc Destruye todas las animaciones que contengan la etiqueta especificada.
+	/// @desc Destroys all animations that contain the specified tag.
+	/// @param {String} tag The tag to match.
 	static DestroyTag = function(_tag)
 	{
-		for (var i = array_length(list) - 1; i >= 0; i--)
+		for (var i = array_length(__list) - 1; i >= 0; i--)
 		{
-			if (list[i].HasTag(_tag) ) list[i].Destroy();
+			var _scurve = __list[i];
+			if (_scurve.HasTag(_tag) ) _scurve.Destroy();
 		}
+
+		return self;
 	}
 	
-	/// @desc Establece la escala de tiempo para todas las animaciones con una etiqueta.
-	static SetTimeScaleByTag = function(_tag, _scale)
+	/// @desc Sets the time scale for all animations with a specific tag.
+	/// @param {String} tag The tag to match.
+	/// @param {Real} scale The time scale to apply.
+	static TimeScaleTag = function(_tag, _scale)
 	{
-		array_foreach(list, method({_tag, _scale}, function(_scurve) { 
-			if (_scurve.HasTag(_tag)) _scurve.TimeScale(_scale); 
-		} ));
-	}
-
-	/// @desc Lanza una serie de animaciones con un retraso escalonado entre cada una.
-	/// @param {Real} stagger_delay El retraso en segundos entre cada animación.
-	/// @param {Struct.SCurve} anim1... La primera animación a lanzar.
-	static StaggerLaunch = function(_stagger_delay, _anim1)
-	{
-		for (var i = 1; i < argument_count; i++)
+		for (var i = array_length(__list) - 1; i >= 0; i--)
 		{
-			var _anim = argument[i];
-			var _cumulative_delay = _stagger_delay * (i - 1);
-			
-			_anim.Delay(_cumulative_delay);
-			_anim.Play();
+			var _scurve = __list[i];
+			if (_scurve.HasTag(_tag) ) _scurve.TimeScale(_scale);
 		}
+
+		return self;
 	}
 }
 
-/// @desc Crea y gestiona una animación basada en una curva.
-/// @param {String} curve El nombre de la Animation Curve a utilizar.
-/// @param {Bool} [destroy_on_finish=true] (Opcional) Si la animación debe destruirse automáticamente al terminar.
+/// @desc Creates and manages a curve-based animation.
+/// @param {Enum.SCURVE} curve The Animation Curve channel name to use.
+/// @param {Bool} [destroy_on_finish=true] (Optional) Whether the animation should auto-destroy when it finishes.
 function SCurve(_curve, _destroy_on_finish=true) constructor
 {
-	// --- Variables estáticas compartidas por todas las animaciones ---
-	static __fps =				game_get_speed(gamespeed_fps);
-	static __delta_previous =	delta_time / 1000000;
-	static __delta =			delta_time / 1000000;
-	
-	// --- Variables para la protección contra picos de lag ---
-	// Límite máximo para delta time (equivale a 15 FPS). Si el juego baja de esto, se activa la protección.
-	static __delta_max = 1 / __SC_MIN_DELTA_FPS;
-	// Bandera para saber si estamos en un estado de "lag".
-	static __delta_restored = false;
+	/// @ignore
+	/// @type {Real}
+	/// @desc Slot index of this animation in the manager list (-1 when not registered).
+	__slot = -1;
 
-	// Registrar esta instancia en el gestor global
-	SCMaster.Register(self);
-	
-	// Actualizar Delta al ser creado.
-	__Delta();
-	
-	// --- Propiedades de la instancia de la curva ---
-	__type =		"";
-	__time =		0;
-	__delay =		0;
-	__duration =	1;
-	__pause =		false;
-	__value =		0;
-	// Escala de tiempo para esta animación.
+	/// @ignore
+	/// @type {Bool}
+	/// @desc Flag indicating whether this animation has been destroyed.
+	__destroyed = false;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc The unique identifier counter for SCurve instances.
+	static __id_count = 0;
+
+	#region PROPERTIES
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc The unique identifier for this SCurve instance.
+	__id = __id_count;
+	__id_count++;
+
+	/// @ignore
+	/// @type {String}
+	/// @desc The type of animation: SC_TYPE_TO or SC_TYPE_PATROL.
+	__type = "";
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc The initial delay before the animation starts.
+	__delay = 0;
+
+	/// @ignore 
+	/// @type {Real}
+	/// @desc Runtime countdown used for the configured delay.
+	__delay_time = 0;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc The total duration of the animation.
+	__duration = 1;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc Runtime elapsed time for the current phase.
+	__phase_time = 0;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc Runtime duration for the current phase.
+	__phase_duration = 1;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc Current progress of the animation (0 to 1).
+	__progress = 0;
+
+	/// @ignore
+	/// @type {Real}
+	/// @desc Time scale for this animation.
 	__time_scale =	1.0;
-	// Bandera para el estado de retraso inicial
-	__is_delaying = false;
-	// Bandera para el modo inverso
-	__is_reversed = false;
-	// Bandera para la autodestrucción (Default: True)
-	__destroy_on_finish = _destroy_on_finish;
-	// Array para almacenar etiquetas
-	__tags = []; 
-	
-	// La instancia o struct a animar.
-	__target = noone;
-	// Array de structs: { name: "x", start: 0, end: 500 }
-	__properties = [];
 
-	__duration_back = 0;
-	__end_value_back = 0;
-	__delay_between = 0;
-	// Estados: "go", "wait", "back"
-	__patrol_state = "go";
+	/// @ignore 
+	/// @type {Bool}
+	/// @desc Flag for the initial delay state.
+	__is_delaying = false;
+
+	/// @ignore 
+	/// @type {Bool}
+	/// @desc Flag for reverse mode.
+	__is_reversed = false;
+
+	/// @ignore 
+	/// @type {Bool}
+	/// @desc Flag for auto-destruction (default: true).
+	__destroy_on_finish = _destroy_on_finish;
+
+	/// @ignore
+	/// @type {Array<String>}
+	/// @desc Array used to store tags.
+	__tags = [];
 	
-	// 0 = no repetir, -1 = infinito
-	__repeats = 0;
+	/// @ignore 
+	/// @type {Id.Instance | Struct}
+	/// @desc The instance or struct to animate.
+	__target = noone;
+
+	/// @ignore 
+	/// @desc Cached target kind for faster property access.
+	__target_is_struct = false;
+
+	/// @ignore
+	/// @type {Array<Struct.SCurve.__Property>}
+	/// @desc Array of structs: { name: "x", start: 0, finish: 500 }
+	__properties = [];
+	
+	/// @ignore
+	/// @desc Duration of the backward phase.
+	__duration_back = 0;
+
+	/// @ignore
+	/// @desc Delay between the forward and backward phases.
+	__delay_between = 0;
+	
+	/// @ignore 
+	/// @desc States: SC_PATROL_MODE_GO, SC_PATROL_MODE_WAIT, SC_PATROL_MODE_BACK
+	__patrol_state = SC_PATROL_MODE_GO;
+	
+	/// @ignore
+	/// @desc Total cycles to play. 1 = play once, -1 = infinite.
+	__repeats = 1;
+
+	/// @ignore
+	/// @desc Completed repeat counter.
 	__repeat_count = 0;
+
+	/// @ignore
+	/// @type {Array<{target: Struct.SCurve, on_repeat: Real}>}
+	/// @desc Array of structs used to store animations to launch on specific repeats.
 	__launch_data = [];
-    
-	// Canal que se usará.
-    __channel_index = _curve;	
-    
-	__channel_struct =	animcurve_get_channel(Simple_Curves_Animation, __channel_index);
+
+	/// @ignore
+	/// @type {Enum.SCURVE}
+	/// @desc Ease animation to use for this SCurve.
+	__channel_index = _curve;
+	
+	/// @ignore
+	/// @type {Struct.AnimCurveChannel}
+	/// @desc Cached curve struct for faster evaluation.
+	__channel_struct = animcurve_get_channel(Simple_Curves_Animation, __channel_index);
+
+	/// @ignore 
+	/// @desc Cached curve kind for the linear fast path.
+	__channel_is_linear = (__channel_index == SCURVE.LINEAR);
+
+	/// @ignore
+	/// @type {Struct.AnimCurveChannel}
+	/// @desc Cached curve struct for the backward phase in Patrol mode.
 	__channel_struct_back = undefined;
 	
-	// Definir callbacks.
+	#endregion
 
-	/// @desc Callback para cuando la animación termine. Si se han definido repeticiones, se ejecutará al finalizar la última repetición.
+	#region CALLBACKS
+
+	/// @ignore
+	/// @desc Callback triggered when the animation finishes. If repeats are set, it runs after the last repeat.
 	__callback_finish = undefined;
 	
-	/// @desc Callback para cuando un Patrol entre en su fase de espera entre la ida y la vuelta.
+	/// @ignore
+	/// @desc Callback triggered when a Patrol enters its wait phase between forward and backward.
 	__callback_wait = undefined;
 	
-	/// @desc Callback para cuando un Patrol complete la fase de ida y comience la vuelta.
-	__callback_continue = undefined;
+	/// @ignore
+	/// @desc Callback triggered when a Patrol completes the forward phase and starts the backward phase.
+	__callback_back = undefined;
 	
-	/// @desc Callback que se ejecuta cada vez que se completa una repetición, recibiendo como argumento el número de repetición actual (empezando en 1).
-	/// @param {Real} repeat_count El número de repetición que se acaba de completar.
+	/// @ignore
+	/// @desc Callback triggered each time a repeat completes, receiving the current repeat number (starting at 1).
+	/// @param {Real} repeat_count The repeat number that has just completed.
 	__callback_repeat = undefined;
 
-	/// @desc Callback que se ejecuta al finalizar el delay inicial, antes de comenzar la animación.
-	__callback_delay_finish = undefined;
-	
-	__step = time_source_create(time_source_game, 1, time_source_units_frames, method(self, __Update), [], -1, time_source_expire_after);
-
-    // Por default el target será quien lo cree.
-	Target(other);
-    	
-	#region Privates
 	/// @ignore
-	/// @desc El bucle principal de la animación, se ejecuta en cada fotograma.
-	static __Update = function()
+	/// @desc Callback triggered when the initial delay finishes, before the animation starts.
+	__callback_delay = undefined;
+	
+	/// @ignore
+	/// @type {Struct.TimeSource}
+	/// @desc Time source used to drive the animation. Created below, once every static exists.
+	__step = undefined;
+
+	#endregion
+
+	// By default, the target is the creator.
+	Target(other);
+
+	// Created here so every static (including __Tick) already exists when the time source binds to it.
+	__step = time_source_create(time_source_game, 1, time_source_units_frames, method(self, __Tick), [], -1, time_source_expire_after);
+
+	// Register this instance once it is fully configured.
+	SCMaster.__Register(self);
+
+	#region Privates
+
+	/// @ignore
+	/// @desc Internal constructor used to store data for each property to animate.
+	/// @param {String} name The name of the property to animate.
+	/// @param {Any} finish The target value for the property.
+	static __Property = function(_name, _finish) constructor
 	{
-		// Actualizar delta.
-		__Delta();
+		if (!is_string(_name) || string_length(_name) == 0)
+		{
+			__scurve_error("Property name must be a non-empty string.");
+			_name = "undefined";
+		}
+
+		/// @ignore
+		/// @desc The name of the property to animate.
+		__name = _name;
+
+		/// @ignore
+		/// @desc The hash of the property to animate.
+		__hash = variable_get_hash(_name);
+
+		/// @ignore 
+		/// @desc The start value for the property.
+		__start = 0;
+
+		/// @ignore
+		/// @desc The end value as configured by the user. May be a relative string such as "+100".
+		__finish_raw = _finish;
+
+		/// @ignore
+		/// @desc The resolved end value for the property.
+		__finish = _finish;
+
+		/// @ignore
+		/// @desc The end value as configured for the return phase in Patrol mode. May be a relative string.
+		__finish_back_raw = undefined;
+
+		/// @ignore
+		/// @desc The resolved end value for the property when returning in Patrol mode.
+		__finish_back = undefined;
+
+		/// @ignore
+		/// @type {Bool}
+		/// @desc False when the property does not exist on the target.
+		__valid = false;
 		
-		if (__pause) exit;
-		
-		// Aplicar escala de tiempo global y local.
-		var _scaled_delta = __delta * __time_scale * SCMaster.GetGlobalTimeScale();
+		/// @ignore
+		/// @desc The start phase for the property.
+		__phase_from = 0;
+
+		/// @ignore
+		/// @desc The end phase for the property.
+		__phase_to = 0;
+
+		/// @ignore
+		/// @desc The delta between the start and end phase for the property.
+		__phase_delta = 0;
+
+		if (SC_LOG_ALERTS_PROPERTY) 
+		{
+			__scurve_alert($"Property '{_name}' configured with end value '{_finish}'. The start value will be captured when the animation begins.");
+		}
+	}
+
+	/// @ignore
+	/// @desc Main animation loop, executed every frame.
+	static __Tick = function()
+	{
+		if (__destroyed) exit;
+
+		// A destroyed target can never be updated again: release the animation instead of ticking forever.
+		if (!__HasValidTarget() )
+		{
+			__scurve_alert("The animation target no longer exists. The animation was destroyed.");
+			Destroy();
+			exit;
+		}
+
+		// Apply global and local time scaling.
+		var _scaled_delta = SCMaster.GetDelta() * __time_scale * SCMaster.GetGlobalTimeScale();
 		var _animation_finished = false;
 
+		#region DELAY HANDLING
 		if (__is_delaying)
 		{
-			__delay -= _scaled_delta;
-			if (__delay <= 0)
+			__delay_time -= _scaled_delta;
+			if (__delay_time <= 0)
 			{
 				__is_delaying = false;
-				// Añadir el tiempo sobrante del delay a la animación para no perder precisión
-				__time += abs(__delay); 
-				if (is_method(__callback_delay_finish) ) __callback_delay_finish();
+				// Add leftover delay time into the animation time to preserve precision.
+				__phase_time += abs(__delay_time);
+
+				// Trigger the delay callback if defined.
+				if (is_callable(__callback_delay) ) __callback_delay();
 			}
 			
 			exit; 
 		}
 		
+		#endregion
+
 		switch (__type)
 		{
-			// --- Lógica para animación de un solo ciclo ---
-			case SC_TYPE_ONCE:
-				__time += _scaled_delta;
-				// Calcular el progreso basado en si está en reversa
-				__value = __is_reversed ? 1.0 - (__time / __duration) : (__time / __duration);
+			// Single-cycle animation logic
+			case SC_TYPE_TO:
+				__phase_time += _scaled_delta;
+				__progress = __phase_time / __phase_duration;
 				
-				// Condición de finalización basada en el tiempo
-				if (__time >= __duration) 
+				// Time-based completion condition.
+				if (__progress >= 1)
 				{
-					// Asegurar que el valor final sea exacto
-					__value = __is_reversed ? 0 : 1; 
+					// Ensure the final value is exact.
+					__progress = 1; 
 					_animation_finished = true;
 				}
 				
-				__ApplyValue(__value, __channel_struct);
+				__Apply(__progress, __channel_struct);
 			break;
 			
-			// --- Lógica para el modo Patrol ---
+			// Patrol mode logic
 			case SC_TYPE_PATROL:
 				switch (__patrol_state)
 				{
-					case "go":
-						__time += _scaled_delta;
-						__value = __time / __duration;
-						if (__value >= 1)
+					case SC_PATROL_MODE_GO:
+						__phase_time += _scaled_delta;
+						__progress = __phase_time / __phase_duration;
+						if (__progress >= 1)
 						{
-							__value = 1;
-							__patrol_state = "wait";
-							__time = 0;
-							if (is_method(__callback_continue)) __callback_continue();
+							// Carry the leftover time into the wait phase so phase transitions stay exact.
+							var _go_overflow = __phase_time - __phase_duration;
+							__progress = 1;
+							__Apply(1, __channel_struct);
+
+							__patrol_state = SC_PATROL_MODE_WAIT;
+							__phase_time = _go_overflow;
+							if (is_callable(__callback_wait) ) __callback_wait();
 						}
-						__ApplyValue(__value, __channel_struct);
-					break;
-					
-					case "wait":
-						__time += _scaled_delta;
-						if (__time >= __delay_between)
+						else
 						{
-							__patrol_state = "back";
-							__time = 0;
-							if (is_method(__callback_wait)) __callback_wait();
+							__Apply(__progress, __channel_struct);
 						}
 					break;
 					
-					case "back":
-						__time += _scaled_delta;
-						__value = __time / __duration_back;
-						if (__value >= 1)
+					case SC_PATROL_MODE_WAIT:
+						__phase_time += _scaled_delta;
+						if (__phase_time >= __delay_between)
 						{
-							__value = 1;
+							var _wait_overflow = __phase_time - __delay_between;
+							__SetPatrolPhase(SC_PATROL_MODE_BACK, false, 1);
+							__phase_time = _wait_overflow;
+							if (is_callable(__callback_back) ) __callback_back();
+						}
+					break;
+					
+					case SC_PATROL_MODE_BACK:
+						__phase_time += _scaled_delta;
+						__progress = __phase_time / __phase_duration;
+						if (__progress >= 1)
+						{
+							__progress = 1;
 							_animation_finished = true;
 						}
-						__ApplyValue(__value, __channel_struct_back ?? __channel_struct);
+						__Apply(__progress, __channel_struct_back ?? __channel_struct);
 					break;
 				}
 			break;
 		}
 		
-		// --- Lógica de repetición al final del ciclo ---
-		if (_animation_finished)
+		// Repeat logic at the end of the cycle
+		if (!_animation_finished) exit;
+
+		__repeat_count++;
+
+		// Trigger the repeat callback if defined.
+		if (is_callable(__callback_repeat) ) __callback_repeat(__repeat_count);
+
+		// Launch any SCurves that were set to launch on this repeat.
+		__LaunchPending(__repeat_count);
+
+		// Reached the repeat limit (or not repeating at all)?
+		if (__repeats != -1 && __repeat_count >= __repeats)
 		{
-			if (__repeats != 0)
-			{
-				__repeat_count++;
-				if (is_method(__callback_repeat) ) __callback_repeat(__repeat_count);
-				
-				var i=0; repeat(array_length(__launch_data) ) 
-				{
-					var _launch = __launch_data[i++];
-					if (is_struct(_launch.target) && _launch.on_repeat == __repeat_count)
-					{
-						_launch.target.Play();
-					}
-				}
+			if (is_callable(__callback_finish) ) __callback_finish();
 
-				if (__repeat_count >= __repeats && __repeats != -1)
-				{
-					if (is_method(__callback_finish)) __callback_finish();
+			// Launch any SCurves that were set to launch at the end of this animation.
+			__LaunchPending(SC_LAUNCH_ON_FINISH);
 
-					repeat(array_length(__launch_data) )
-					{
-						var _launch = __launch_data[i++];
-						if (is_struct(_launch.target) && _launch.on_repeat == 0) 
-						{
-							_launch.target.Play();
-						}
-					}
-					
-					// Decidir si destruir o detener
-					if (__destroy_on_finish) { Destroy(); } else { Stop(); }
-				}
-				else
-				{
-					__ResetAnimation();
-				}
-			}
-			else
-			{
-				if (is_method(__callback_finish)) __callback_finish();
-				var i=0; repeat(array_length(__launch_data) )
-				{
-					var _launch = __launch_data[i++];
-					if (is_struct(_launch.target) ) 
-					{
-						_launch.target.Play();
-					}
-				}
-				
-				// Decidir si destruir o detener
-				if (__destroy_on_finish) { Destroy(); } else { Stop(); }
-			}
+			// Decide whether to destroy or stop.
+			if (__destroy_on_finish) { Destroy(); } else { Stop(); }
+			exit;
 		}
+
+		// Cycles left: restart the phase (initial delay included).
+		__Reset();
 	}
 	
+
 	/// @ignore
-	/// @desc Calcula el delta time y lo protege contra picos de lag.
-	static __Delta = function()
+	/// @desc Applies the calculated value to target properties.
+	static __Apply = function(_value, _channel)
 	{
-		// --- Manejo y cálculo del Delta Time ---
-		__delta_previous = __delta; // Guardar el delta del fotograma anterior.
-		
-		var _current_delta = delta_time / 1000000; // Calcular el delta actual en segundos.
-		
-		// --- Lógica de protección contra picos de lag ---
-		if (_current_delta > __delta_max)
-		{
-			// Si el delta time es demasiado grande (caída de FPS)...
-			// Usamos un valor seguro para evitar un salto brusco en la animación.
-			__delta = __delta_restored ? __delta_max : __delta_previous;
+		var _eased_value = __channel_is_linear ? _value : animcurve_channel_evaluate(_channel, _value);
 
-			// Marcamos que el sistema está en modo "restauración".
-			__delta_restored = true;
-		}
-		else
+		var i = 0; repeat(array_length(__properties) )
 		{
-			// Si el rendimiento es normal, usamos el delta actual.
-			__delta = _current_delta;
+			var _prop = __properties[i++];
 
-			// Desmarcamos el modo "restauración".
-			__delta_restored = false;
+			// Properties that do not exist on the target are reported once in __InitProps.
+			if (!_prop.__valid) continue;
+
+			__SetTargetValue(_prop.__hash, _prop.__phase_from + (_prop.__phase_delta * _eased_value) );
 		}
 	}
 
 	/// @ignore
-	/// @desc Aplica el valor calculado a las propiedades del target.
-	static __ApplyValue = function(_value, _channel)
+	/// @desc Resets animation state for a new repeat.
+	static __Reset = function()
 	{
-		var _eased_value = animcurve_channel_evaluate(_channel, _value);
-		
-		var i=0; repeat(array_length(__properties) )
-		{
-			var _prop =	__properties[i++];
-			var _start = _prop.start;
-			var _end = _prop.finish;
+		__PreparePhase();
+	}
 
-			if (__type == SC_TYPE_PATROL && __patrol_state == "back")
+	/// @ignore
+	/// @desc Plays every queued animation registered for the given repeat index.
+	/// @param {Real} _repeat_index Repeat index to match. SC_LAUNCH_ON_FINISH matches the end of the animation.
+	static __LaunchPending = function(_repeat_index)
+	{
+		var i = 0; repeat(array_length(__launch_data) )
+		{
+			var _launch = __launch_data[i++];
+			if (_launch.on_repeat != _repeat_index) continue;
+
+			if (!_launch.target.IsValid() )
 			{
-				_start = _prop.finish;
-				_end = _prop.finish_back ?? _prop.start;
+				__scurve_alert("A queued animation was destroyed before it could be launched. Skipping.");
+				continue;
 			}
+
+			_launch.target.Play();
+		}
+	}
+
+	/// @ignore
+	/// @desc Gets the current value of a property from the active target.
+	/// @param {String} prop_hash The hash of the property to retrieve.
+	static __GetTargetValue = function(_prop_hash)
+	{
+		if (!__HasValidTarget() ) return undefined;
+		return struct_get_from_hash(__target, _prop_hash);
+	}
+
+	/// @ignore
+	/// @desc Sets a property value on the active target.
+	/// @param {String} _prop_hash The hash of the property to set.
+	/// @param {Real} _value The value to set.
+	static __SetTargetValue = function(_prop_hash, _value)
+	{
+		struct_set_from_hash(__target, _prop_hash, _value);
+	}
+
+	/// @ignore
+	/// @desc Returns true while the target still exists, so animations never tick against a dead target.
+	/// @return {Bool} True when the target is a live instance or a struct.
+	static __HasValidTarget = function()
+	{
+		if (__target_is_struct) return is_struct(__target);
+		return instance_exists(__target);
+	}
+
+	/// @ignore
+	/// @desc Computes duration ratio for To based on real remaining distance.
+	static __ComputeToPhaseRatio = function(_is_reversed_phase)
+	{
+		var _ratio = 0;
+		var _has_ratio = false;
+
+		var i = 0; repeat(array_length(__properties))
+		{
+			var _prop = __properties[i++];
+			var _current = __GetTargetValue(_prop.__hash);
+
+			if (!is_real(_current) || !is_real(_prop.__start) || !is_real(_prop.__finish) ) continue;
+
+			var _target = _is_reversed_phase ? _prop.__start : _prop.__finish;
+			var _full = abs(_prop.__finish - _prop.__start);
+			if (_full <= 0) continue;
 			
-			var _final_value = lerp(_start, _end, _eased_value);
-			
-			// --- Comprobación para Structs e Instancias ---
-			if (is_struct(__target))
-			{
-				variable_struct_set(__target, _prop.name, _final_value);
-			}
-			else if (instance_exists(__target))
-			{
-				variable_instance_set(__target, _prop.name, _final_value);
-			}
+			var _remaining = abs(_target - _current);
+			_ratio = max(_ratio, clamp(_remaining / _full, 0, 1));
+			_has_ratio = true;
 		}
+
+		return _has_ratio ? _ratio : clamp(__progress, 0, 1);
 	}
 
 	/// @ignore
-	/// @desc Reinicia el estado de la animación para una nueva repetición.
-	static __ResetAnimation = function()
+	/// @desc Computes duration ratio for Patrol based on real remaining distance.
+	static __ComputePatrolPhaseRatio = function(_target_state)
 	{
-		__time = 0;
-		__value = 0;
-		if (__type == SC_TYPE_PATROL)
+		var _ratio = 0;
+		var _has_ratio = false;
+
+		var i = 0; repeat(array_length(__properties) )
 		{
-			__patrol_state = "go";
+			var _prop = __properties[i++];
+			var _current = __GetTargetValue(_prop.__hash);
+			var _is_forward = __is_reversed ? (_target_state == SC_PATROL_MODE_BACK) : (_target_state == SC_PATROL_MODE_GO);
+			var _target = _is_forward ? _prop.__finish : (_prop.__finish_back ?? _prop.__start);
+			var _full_from = _is_forward ? _prop.__start : _prop.__finish;
+
+			if (!is_real(_current) || !is_real(_target) || !is_real(_full_from)) continue;
+
+			var _full = abs(_target - _full_from);
+			if (_full <= 0) continue;
+
+			var _remaining = abs(_target - _current);
+			_ratio = max(_ratio, clamp(_remaining / _full, 0, 1));
+			_has_ratio = true;
 		}
 
-		// Re-inicializar las propiedades para la siguiente repetición
-		__InitializeProperties();		
+		return _has_ratio ? _ratio : clamp(__progress, 0, 1);
+	}
+
+	/// @ignore
+	/// @desc Configures the runtime phase for a To animation.
+	static __SetToPhase = function(_is_reversed_phase, _from_current = false, _duration_ratio = 1)
+	{
+		var _ratio = clamp(_duration_ratio, 0, 1);
+		__phase_time = 0;
+		__phase_duration = max(SC_MIN_PHASE_DURATION, __duration * _ratio);
+		__progress = 0;
+
+		var i = 0; repeat(array_length(__properties))
+		{
+			var _prop = __properties[i++];
+			_prop.__phase_from = _from_current ? __GetTargetValue(_prop.__hash) : (_is_reversed_phase ? _prop.__finish : _prop.__start);
+			_prop.__phase_to = _is_reversed_phase ? _prop.__start : _prop.__finish;
+			_prop.__phase_delta = _prop.__phase_to - _prop.__phase_from;
+		}
+	}
+
+	/// @ignore
+	/// @desc Configures the runtime phase for a Patrol animation.
+	static __SetPatrolPhase = function(_state, _from_current = false, _duration_ratio = 1)
+	{
+		var _ratio = clamp(_duration_ratio, 0, 1);
+		var _is_forward = __is_reversed ? (_state == SC_PATROL_MODE_BACK) : (_state == SC_PATROL_MODE_GO);
+		__patrol_state = _state;
+		__phase_time = 0;
+		__phase_duration = max(SC_MIN_PHASE_DURATION, (_state == SC_PATROL_MODE_GO ? __duration : __duration_back) * _ratio);
+		__progress = 0;
+
+		var i = 0; repeat(array_length(__properties) )
+		{
+			var _prop = __properties[i++];
+			_prop.__phase_from = _from_current ? __GetTargetValue(_prop.__hash) : (_is_forward ? _prop.__start : _prop.__finish);
+			_prop.__phase_to = _is_forward ? _prop.__finish : (_prop.__finish_back ?? _prop.__start);
+			_prop.__phase_delta = _prop.__phase_to - _prop.__phase_from;
+		}
+	}
+
+	/// @ignore
+	/// @desc Prepares runtime phase values from the current configuration.
+	static __PreparePhase = function()
+	{
+		__delay_time = __delay;
+		__is_delaying = __delay_time > 0;
+
+		switch (__type)
+		{
+			case SC_TYPE_TO:
+				__SetToPhase(__is_reversed, false, 1);
+			break;
+
+			case SC_TYPE_PATROL:
+				__SetPatrolPhase(SC_PATROL_MODE_GO, false, 1);
+			break;
+		}
 	}
 	
 	/// @ignore
-	/// @desc Constructor interno para almacenar los datos de cada propiedad a animar.
-	static __Property = function(_name, _finish) constructor
+	/// @desc Parses a numeric string. Returns undefined when the string is not a number.
+	/// @param {String} _string The string to parse.
+	/// @return {Real|Undefined} The parsed number, or undefined.
+	static __ParseReal = function(_string)
 	{
-		name = _name;
-		start = 0;
-		finish = _finish;
-		finish_back = undefined;
+		var _length = string_length(_string);
+		if (_length == 0) return undefined;
 
-		if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves INFO::Propiedad '{name}' configurada con valor final '{finish}'. El valor inicial se capturará al iniciar la animación.");
+		for (var i = 1; i <= _length; i++)
+		{
+			var _code = ord(string_char_at(_string, i) );
+			var _is_digit = (_code >= 48 && _code <= 57);
+			// 46 = ".", 43 = "+", 45 = "-"
+			if (!_is_digit && _code != 46 && _code != 43 && _code != 45) return undefined;
+		}
+
+		var _value = real(_string);
+		return is_nan(_value) ? undefined : _value;
 	}
-	
-	/// @ignore
-	/// @desc Calcula un valor final a partir de un string relativo (ej: "+=100").
-	static __CalculateRelativeValue = function(_base_value, _relative_string)
-	{
-	    var _operator = string_char_at(_relative_string, 1);
-	    var _value_str = string_delete(_relative_string, 1, 1);
-	    var _value = real(_value_str);
 
-	    // Comprueba si la conversión falló (real() devuelve 0 para strings no numéricos)
-	    if (_value == 0 && _value_str != "0" && _value_str != ".0" && _value_str != "-0")
-	    {
-	        if (__SC_DEBUG_ERROR) show_debug_message($"Simple-Curves ERROR::Valor numerico invalido '{_value_str}' en string relativo '{_relative_string}'.");
-	        return _base_value; // En caso de error, devuelve el valor original
-	    }
-    
-	    switch (_operator)
-	    {
-	        case "+": return _base_value + _value;
-	        case "-": return _base_value - _value;
-	        case "*": return _base_value * _value;
-	        case "/": 
-	            if (_value == 0)
+	/// @ignore
+	/// @desc Resolves a configured end value against a base value.
+	///       Numbers pass through untouched; strings are parsed as absolute numbers or as relative operations ("+10", "-3", "*2", "/2", "^2", "%2").
+	/// @param {Any} _raw The configured end value.
+	/// @param {Real} _base The value the relative operation applies to.
+	/// @return {Real|Undefined} The resolved end value.
+	static __ResolveEnd = function(_raw, _base)
+	{
+		if (!is_string(_raw) ) return _raw;
+
+		var _operator = string_char_at(_raw, 1);
+		if (string_pos(_operator, "+-*/^%") == 0) return __ParseReal(_raw);
+
+		var _value = __ParseReal(string_delete(_raw, 1, 1) );
+		if (is_undefined(_value) )
+		{
+			__scurve_error($"Invalid relative value '{_raw}'. A number was expected after '{_operator}'.");
+			return _base;
+		}
+
+		switch (_operator)
+		{
+			case "+": return _base + _value;
+			case "-": return _base - _value;
+			case "*": return _base * _value;
+			case "^": return power(_base, _value);
+
+			case "/":
+				if (_value == 0)
 				{
-	                if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves WARNING::Division por cero en string relativo '{_relative_string}'.");
-	                return _base_value;
-	            }
+					__scurve_error($"Division by zero in relative value '{_raw}'.");
+					return _base;
+				}
 
-	            return _base_value / _value;
-	    }
-    
+				return _base / _value;
+
+			case "%":
+				if (_value == 0)
+				{
+					__scurve_error($"Modulo by zero in relative value '{_raw}'.");
+					return _base;
+				}
+
+				return _base mod _value;
+		}
+
 		// Fallback
-	    return _base_value;
+		return _base;
 	}
 
 	/// @ignore
-	/// @desc "Compila" las propiedades, obteniendo sus valores iniciales y calculando los relativos.
-	static __InitializeProperties = function()
+	/// @desc "Compiles" properties by reading start values and resolving relative values.
+	static __InitProps = function()
 	{
-		var _get_var = is_struct(__target) ? variable_struct_get : variable_instance_get;
-		
-		if (is_struct(__target) || instance_exists(__target))
+		if (!__HasValidTarget() )
 		{
-			var i=0; repeat(array_length(__properties) )
+			__scurve_error("Cannot initialize the animation properties: the target does not exist.");
+			return;
+		}
+
+		var i = 0; repeat(array_length(__properties) )
+		{
+			var _prop = __properties[i++];
+			_prop.__start = __GetTargetValue(_prop.__hash);
+
+			if (is_undefined(_prop.__start) )
 			{
-				var _prop = __properties[i++];
-				_prop.start = _get_var(__target, _prop.name);
-				
-				// Copiamos el valor final original por si es relativo y necesitamos recalcularlo
-				var _finish_val = _prop.finish;
-				if (is_string(_finish_val) && string_length(_finish_val) > 0)
-				{
-					var _operator = string_char_at(_finish_val, 1);
-					if (string_pos(_operator, "+-*/") > 0)
-					{
-						_prop.finish = __CalculateRelativeValue(_prop.start, _finish_val);
-					}
-					else
-					{
-						_prop.finish = real(_finish_val);
-					}
-				}
-				
-				var _finish_back_val = _prop.finish_back;
-				if (__type == SC_TYPE_PATROL && is_string(_finish_back_val) && string_length(_finish_back_val) > 0)
-				{
-					var _operator = string_char_at(_finish_back_val, 1);
-					if (string_pos(_operator, "+-*/") > 0)
-					{
-						var _base_for_return = _prop.finish;
-						_prop.finish_back = __CalculateRelativeValue(_base_for_return, _finish_back_val);
-					}
-					else
-					{
-						_prop.finish_back = real(_finish_back_val);
-					}
-				}
+				_prop.__valid = false;
+				__scurve_error($"Property '{_prop.__name}' does not exist on the target.");
+				continue;
+			}
+
+			_prop.__valid = true;
+
+			// Always resolve from the raw configuration so Refresh() can recalculate relative values.
+			_prop.__finish = __ResolveEnd(_prop.__finish_raw, _prop.__start);
+
+			if (__type == SC_TYPE_PATROL)
+			{
+				_prop.__finish_back = __ResolveEnd(_prop.__finish_back_raw, _prop.__finish);
 			}
 		}
+
+		__PreparePhase();
 	}
 	
 	#endregion
 	
-	#region API
-	/// @desc Inicia la animación.
-    /// @return {Struct.SCurve} description
+	#region PUBLIC API
+
+	/// @desc Starts the animation.
+	/// @return {Struct.SCurve} description
 	static Play = function()
 	{
-		if (!time_source_exists(__step))
+		if (__destroyed)
 		{
-			if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.Play()' llamado sobre una SCurve destruida.");
+			__scurve_error("Cannot Play() a destroyed SCurve.");
 			return self;
 		}
+
+		if (__type == "")
+		{
+			__scurve_error("Cannot Play() before configuring '.To()' or '.Patrol()'.");
+			return self;
+		}
+
+		if (!__HasValidTarget() )
+		{
+			__scurve_error("Cannot Play() because the target does not exist.");
+			return self;
+		}
+
+		if (!time_source_exists(__step) ) return self;
 
 		var _time_state = time_source_get_state(__step);
 		if (_time_state == time_source_state_initial || _time_state == time_source_state_stopped)
 		{
-			// Iniciar SCurve.
-			// Solo inicializa las propiedades la primera vez
+			// Restart the cycle counter on every new run.
+			__repeat_count = 0;
+
+			// Only initialize properties on the first run.
 			if (_time_state == time_source_state_initial)
 			{
-				__InitializeProperties();
+				__InitProps();
+			}
+			else
+			{
+				__PreparePhase();
 			}
 			
-			// Reiniciar el tiempo y el delay para permitir la reproducción inversa o reinicio
-			__time = 0;
-			if (__delay > 0) {__is_delaying = true; }
-			
 			time_source_start(__step);
-			__pause = false;
 		}
 		
-		if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves INFO::El estado del time-source({__step}) es: {_time_state}");
+		if (SC_LOG_ALERTS_PLAY) 
+		{
+			__scurve_alert($"Play() called while the time source was in state {_time_state}.");
+		}
 		
 		return self;		
 	}
 	
-	/// @desc Recaptura los valores iniciales de las propiedades desde el target actual.
-	///       Útil para SCurves reutilizables donde los valores pueden haber cambiado.
-	///       Debe llamarse ANTES de Play() para que tome efecto.
+	/// @desc Recaptures property start values from the current target.
+	///       Useful for reusable SCurves where values may have changed.
+	///       Must be called BEFORE Play() to take effect.
 	/// @return {Struct.SCurve}
 	static Refresh = function()
 	{
-		__InitializeProperties();
+		if (__destroyed)
+		{
+			__scurve_error("Cannot Refresh() a destroyed SCurve.");
+			return self;
+		}
+
+		__repeat_count = 0;
+		__InitProps();
 		return self;
 	}
 	
-	/// @desc Detiene la animación.
-    /// @return {Struct.SCurve} description    
+	/// @desc Stops the animation.
+	/// @return {Struct.SCurve} description    
 	static Stop = function()
 	{
-		if (!time_source_exists(__step)) return self;
-
+		if (__destroyed) return self;
+		if (!time_source_exists(__step) ) return self;
 		time_source_stop(__step);
+
 		return self;
 	}
 	
-	/// @desc Pausa la animación.
-    /// @return {Struct.SCurve} description    
+	/// @desc Pauses the animation.
+	/// @return {Struct.SCurve} description    
 	static Pause = function()
 	{
-		__pause = true;
+		if (__destroyed) return self;
+		if (!time_source_exists(__step) ) return self;
+		if (time_source_get_state(__step) == time_source_state_active) time_source_pause(__step);
+
 		return self;
 	}
 	
-	/// @desc Reanuda la animación.
-    /// @return {Struct.SCurve} description
+	/// @desc Resumes the animation.
+	/// @return {Struct.SCurve} description
 	static Resume = function()
 	{
-		__pause = false;
+		if (__destroyed) return self;
+		if (!time_source_exists(__step) ) return self;
+		if (time_source_get_state(__step) == time_source_state_paused) time_source_resume(__step);
+
 		return self;
 	}
 
-	// Método para destruir la animación y liberar recursos
+	/// @desc Destroys the animation and releases every resource it holds. Safe to call multiple times.
+	/// @return {Struct.SCurve} this instance
 	static Destroy = function()
 	{
+		if (__destroyed) return self;
+		__destroyed = true;
+
+		SCMaster.__Unregister(self);
+
+		// Destroy the time source to free resources.
 		if (time_source_exists(__step) )
 		{
 			time_source_destroy(__step);
-			// Marcar como inválido
-			__step = -1;
+			__step = undefined;
 		}
-		
-		SCMaster.Unregister(self);
+
+		// Release every reference so the target and callbacks can be collected.
+		__target = noone;
+		__target_is_struct = false;
+		__properties = [];
+		__launch_data = [];
+		__tags = [];
+		__callback_finish = undefined;
+		__callback_wait = undefined;
+		__callback_back = undefined;
+		__callback_repeat = undefined;
+		__callback_delay = undefined;
+
+		return self;
 	}
 	
-	/// @desc Define el objetivo y la propiedad a animar.
-	/// @param {Id.Instance | Struct} target La instancia o struct a animar.
-    /// @return {Struct.SCurve} description
+	/// @desc Sets the target object/struct to animate.
+	/// @param {Id.Instance | Struct} target The instance or struct to animate.
+	/// @return {Struct.SCurve} description
 	static Target = function(_target)
 	{	
 		__target = _target;
+		__target_is_struct = is_struct(_target);
 		return self;
 	}
 
-	/// @desc Define la escala de tiempo para esta animación.
-	/// @param {Real} scale Multiplicador de velocidad (1=normal, 0.5=mitad, 2=doble).
+	/// @desc Sets the local time scale for this animation.
+	/// @param {Real} scale Speed multiplier (1=normal, 0.5=half, 2=double).
 	static TimeScale = function(_scale)
 	{
-		__time_scale = max(0, _scale); // Prevenir escalas de tiempo negativas
+		__time_scale = max(0, abs(_scale) );
 		return self;
 	}
 
-	/// @desc Establece un retraso inicial para la animación.
-	/// @param {Real} seconds Tiempo de retraso en segundos.
-    /// @return {Struct.SCurve} description
+	/// @desc Sets an initial delay for the animation.
+	/// @param {Real} seconds Delay time in seconds.
+	/// @return {Struct.SCurve} description
 	static Delay = function(_seconds)
 	{
 		__delay = max(0, _seconds);
 		return self;
 	}
 	
-	/// @desc Configura una animación de un solo ciclo para una o más propiedades.
-	/// @param {Real} duration La duración de la animación en segundos.
-	/// @param {String} prop1 El nombre de la primera variable a animar.
-	/// @param {Any} end1 El valor final de la primera propiedad.
-	/// @param {String} [prop2] ... y así sucesivamente.
-    /// @return {Struct.SCurve} description
-	static Once = function(_duration, _prop1, _end1)
+	/// @desc Configures a one-shot animation for one or more properties.
+	/// @param {Real} _duration Animation duration in seconds.
+	/// @param {String} _prop1 Name of the first variable to animate.
+	/// @param {Any} _end1 End value of the first property.
+	/// @param {String} [_prop2] ...and so on.
+	/// @return {Struct.SCurve} this instance
+	static To = function(_duration, _prop1, _end1)
 	{
-		if (__type != "") 
+		if (__type != "")
 		{
-			if (__SC_DEBUG_ERROR) show_debug_message("Simple-Curves ERROR::El tipo de animación (Once/Patrol) ya ha sido definido.");
+			__scurve_error($"Animation type ({__type}) is already defined. '.To()' and '.Patrol()' can only be called once.");
 			return self;
 		}
-		
-		__type = SC_TYPE_ONCE;
-		__duration = _duration;
-		
-		for (var i = 1; i < argument_count; i += 2)
+
+		if (!is_real(_duration) || _duration < 0)
 		{
-			array_push(__properties, new __Property(argument[i], argument[i+1]) );
+			__scurve_error($"To() expects a non-negative duration in seconds, got '{_duration}'.");
+			return self;
 		}
-		
+
+		// One fixed argument (duration) followed by (property, end value) pairs.
+		if (argument_count < 3 || (argument_count - 1) mod 2 != 0)
+		{
+			__scurve_error($"To() expects (property, end value) pairs. Received {argument_count} arguments.");
+			return self;
+		}
+
+		__type = SC_TYPE_TO;
+		__duration = _duration;
+
+		for (var i = 1; i < argument_count; i += 2) { array_push(__properties, new __Property(argument[i], argument[i + 1]) ); }
+
 		return self;
 	}
 
-	/// @desc Configura una animación de ida y vuelta para una o más propiedades.
-	/// @param {Real}   duration_go      Duración de la fase de "ida" en segundos.
-	/// @param {Real}   duration_back    Duración de la fase de "vuelta" en segundos.
-	/// @param {Real}   delay            Espera en segundos entre la ida y la vuelta.
-	/// @param {String} prop1            El nombre de la primera variable a animar.
-	/// @param {Any}    end1             El valor final de la primera propiedad en la fase de "ida".
-	/// @param {String} [prop2]          ... y así sucesivamente para más propiedades.
-    /// @return {Struct.SCurve} description
+	/// @desc Configures a forward-backward animation for one or more properties.
+	/// @param {Real} _duration_go Duration of the forward phase in seconds.
+	/// @param {Real} _duration_back Duration of the backward phase in seconds.
+	/// @param {Real} _delay Wait time in seconds between forward and backward.
+	/// @param {String} _prop1 Name of the first variable to animate.
+	/// @param {Any} _end1 End value of the first property in the forward phase.
+	/// @param {String} [_prop2] ...and so on for additional properties.
+	/// @return {Struct.SCurve} this instance
 	static Patrol = function(_duration_go, _duration_back, _delay, _prop1, _end1)
 	{
-		if (__type != "") 
+		if (__type != "")
 		{
-			if (__SC_DEBUG_ERROR) show_debug_message("Simple-Curves ERROR::El tipo de animación (Once/Patrol) ya ha sido definido.");
+			__scurve_error($"Animation type ({__type}) is already defined. '.To()' and '.Patrol()' can only be called once.");
 			return self;
 		}
-		
+
+		if (!is_real(_duration_go) || _duration_go < 0 || !is_real(_duration_back) || _duration_back < 0)
+		{
+			__scurve_error("Patrol() expects non-negative phase durations in seconds.");
+			return self;
+		}
+
+		if (!is_real(_delay) || _delay < 0)
+		{
+			__scurve_error($"Patrol() expects a non-negative wait delay in seconds, got '{_delay}'.");
+			return self;
+		}
+
+		// Three fixed arguments (go duration, back duration, delay) followed by (property, end value) pairs.
+		if (argument_count < 5 || (argument_count - 3) mod 2 != 0)
+		{
+			__scurve_error($"Patrol() expects (property, end value) pairs. Received {argument_count} arguments.");
+			return self;
+		}
+
 		__type = SC_TYPE_PATROL;
 		__duration = _duration_go;
 		__duration_back = _duration_back;
 		__delay_between = _delay;
-		
-		for (var i = 3; i < argument_count; i += 2)
-		{
-			array_push(__properties, new __Property(argument[i], argument[i+1]) );
-		}
+
+		for (var i = 3; i < argument_count; i += 2) { array_push(__properties, new __Property(argument[i], argument[i + 1]) ); }
+
 		return self;
 	}
 
-	/// @desc Invierte la dirección de una animación de tipo Once.
-	/// @param {Bool} [is_reversed=true] Si la animación debe reproducirse en reversa.
-    /// @return {Struct.SCurve} description    
+	/// @desc Reverses the current direction of a '.To()' or '.Patrol()' animation, whether running or stopped.
+	/// @param {Bool} [is_reversed=true] Whether the animation should play in reverse.
+	/// @return {Struct.SCurve} description    
 	static Reverse = function(_is_reversed = true)
 	{
-		if (__type != "" && __type != SC_TYPE_ONCE)
+		// If the time source is invalid, there's nothing to reverse.
+		if (!time_source_exists(__step) ) 
 		{
-			if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.Reverse()' solo tiene efecto en animaciones de tipo Once.");
-			return self;
-		}
-
-		if (!time_source_exists(__step))
-		{
-			if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.Reverse()' llamado sobre una SCurve destruida.");
+			__scurve_alert("Cannot reverse SCurve because the time source is invalid. The animation may have been destroyed.");
 			return self;
 		}
 		
-		var _time_state = time_source_get_state(__step);
-		if (_time_state == time_source_state_stopped)
+		// If the animation type is not defined, there's nothing to reverse.
+		if (__type == "") 
 		{
-			__is_reversed = _is_reversed;
+			__scurve_alert("Cannot reverse SCurve because the animation type is not defined. Use '.To()' or '.Patrol()' to define an animation first.");
+			return self;
+		}
+
+		// Already in the requested state, no need to change.
+		if (__is_reversed == _is_reversed)
+		{
+			__scurve_alert($"SCurve is already in the requested reversed state ({_is_reversed}). No action taken.");
+			return self;
+		}
+
+		var _time_state = time_source_get_state(__step);
+		var _is_active = (_time_state == time_source_state_active || _time_state == time_source_state_paused);
+
+		// Set flag.
+		__is_reversed = _is_reversed;
+
+		// If the animation is not active, just set the reversed flag and prepare the phase for the next Play().
+		if (!_is_active) { __PreparePhase(); return self; }
+		
+		switch (__type)
+		{
+			case SC_TYPE_TO:
+				var _duration_ratio = __ComputeToPhaseRatio(__is_reversed);
+				__SetToPhase(__is_reversed, true, _duration_ratio);
+			break;
+
+			case SC_TYPE_PATROL:
+				if (__patrol_state != SC_PATROL_MODE_WAIT)
+				{
+					var _target_state = __is_reversed ? SC_PATROL_MODE_BACK : SC_PATROL_MODE_GO;
+					var _duration_ratio = __ComputePatrolPhaseRatio(_target_state);
+
+					if (_duration_ratio <= 0)
+					{
+						_target_state = (_target_state == SC_PATROL_MODE_GO) ? SC_PATROL_MODE_BACK : SC_PATROL_MODE_GO;
+						_duration_ratio = __ComputePatrolPhaseRatio(_target_state);
+					}
+
+					__SetPatrolPhase(_target_state, true, _duration_ratio);
+				}
+			break;
 		}
 		
 		return self;
 	}
 
-	/// @desc (Opcional) Define los valores de retorno para un Patrol. Debe ser llamado DESPUÉS de .Patrol().
-	/// @param {String} prop1 El nombre de la primera variable a modificar en la vuelta.
-	/// @param {Any} end_back1 El valor final de la primera propiedad en la vuelta. Puede ser relativo.
-	/// @param {String} [prop2] ... y así sucesivamente.
-	static ReturningTo = function(_prop1, _end_back1)
+	/// @desc Defines how many cycles the animation plays.
+	/// @param {Real} [_count=-1] Total cycles to play. 1 = play once, -1 = infinite.
+	/// @return {Struct.SCurve} this instance
+	static Repeat = function(_count = -1)
 	{
-	    if (__type != SC_TYPE_PATROL)
-	    {
-	        if (__SC_DEBUG_WARNING) show_debug_message("Simple-Curves WARNING::'.ReturningTo() solo tiene efecto en animaciones de tipo Patrol.");
-	        return self;
-	    }
-	
-	    for (var i = 0; i < argument_count; i += 2)
-	    {
-	        var _prop_name = argument[i];
-	        var _end_back_value = argument[i+1];
-	        var _found = false;
-	
-	        // Busca la propiedad correspondiente en el array __properties
-			var j=0; repeat(array_length(__properties) )
-			{
-				var _prop = __properties[j++];
-	            if (_prop.name == _prop_name)
-	            {
-	                _prop.finish_back = _end_back_value;
-	                _found = true;
-	                break;
-	            }
-			}
-	
-	        if (!_found)
-	        {
-	            if (__SC_DEBUG_WARNING) show_debug_message($"Simple-Curves WARNING::Propiedad '{_prop_name}' no encontrada para definir valor de retorno en .ReturningTo().");
-	        }
-	    }
-
-	    return self;
-	}
-	
-	/// @desc Define cuantas veces se repetirá la animación.
-	/// @param {Real} count Número de repeticiones. -1 para infinito.
-    /// @return {Struct.SCurve} description
-	static Repeat = function(_count)
-	{
-	    // Si _count es <= 0, se asume repetición infinita (-1)
-	    __repeats = (_count <= 0) ? -1 : _count;
-	    return self;
-	}
-	
-	/// @desc Lanza otro SCurve al terminar o en una repetición específica.
-	/// @param {Struct.SCurve} scurve_instance La instancia de SCurve a lanzar.
-	/// @param {Real} [on_repeat_count] (Opcional) El número de repetición en el que se lanzará. Si no se especifica, se lanza al final.
-	static Launch = function(_scurve_instance, _on_repeat_count = 0)
-	{
-		for (var i = 0; i < argument_count; i += 2)
+		if (!is_real(_count) || _count == 0 || _count < -1)
 		{
-		    array_push(__launch_data, 
+			__scurve_error($"Repeat() expects a positive cycle count or -1 for infinite, got '{_count}'.");
+			return self;
+		}
+
+		__repeats = _count;
+		return self;
+	}
+	
+	/// @desc Launches one or more SCurves on finish or on a specific repeat.
+	///       Accepts any number of (tween, repeat index) arguments; the index defaults to SC_LAUNCH_ON_FINISH.
+	/// @param {Struct.SCurve} ... Pairs of SCurve instances and repeat indexes.
+	/// @return {Struct.SCurve} this instance
+	static Launch = function(...)
+	{
+		var i = 0;
+		while (i < argument_count)
+		{
+			var _instance = argument[i];
+
+			if (!is_scurve(_instance) )
 			{
-		        target:		argument[i],
-		        on_repeat:	argument[i+1]
-		    });
-		}		
+				__scurve_error($"Launch() argument {i} is not a valid SCurve instance.");
+				i++;
+				continue;
+			}
+
+			// The repeat index is optional: default to launch on finish.
+			var _on_repeat = SC_LAUNCH_ON_FINISH;
+			if (i + 1 < argument_count && is_real(argument[i + 1]) )
+			{
+				_on_repeat = argument[i + 1];
+				i++;
+			}
+
+			array_push(__launch_data, { target: _instance, on_repeat: _on_repeat });
+			i++;
+		}
 		
-	    return self;
+		return self;
 	}
 
-	/// @desc Marca la animación para que se destruya automáticamente al finalizar.
-	/// @param {Bool} [destroy=true] Si debe autodestruirse.
+	/// @desc Marks animation for automatic destruction on finish.
+	/// @param {Bool} [destroy=true] Whether it should auto-destroy.
 	static DestroyOnFinish = function(_destroy = true)
 	{
 		__destroy_on_finish = _destroy;
 		return self;
 	}
 
-	/// @desc Asigna una o más etiquetas a la animación para su control en grupo.
+	/// @desc Assigns one or more tags for group control.
+	/// @param {String} tag1 The first tag.
+	/// @param {String} [tag2] ...and so on.
 	static Tag = function()
 	{
-		for (var i = 0; i < argument_count; i++)
-		{
-			array_push(__tags, argument[i]);
-		}
+		var i=0; repeat (argument_count) { array_push(__tags, argument[i++]); }
 		return self;
 	}
 	
-	/// @desc Define una función a llamar cuando la animación termina.
-	/// @param {Method} callback La función a ejecutar.
-    /// @return {Struct.SCurve} description
+	/// @desc Defines a callback to run when the animation finishes.
+	/// @param {Method} callback The callback function.
+	/// @return {Struct.SCurve} description
 	static OnFinish = function(_callback)
 	{
 		__callback_finish = _callback;
 		return self;
 	}
 	
-	/// @desc Define una función a llamar cuando la animación termina.
-	/// @param {Method} callback La función a ejecutar.
-    /// @return {Struct.SCurve} description
-	static OnContinue = function(_callback)
+	/// @desc Defines a callback to run when Patrol switches to the backward phase.
+	/// @param {Method} callback The callback function.
+	/// @return {Struct.SCurve} description
+	static OnBack = function(_callback)
 	{
-		__callback_continue = _callback;
+		__callback_back = _callback;
 		return self;
 	}	
 	
-	/// @desc Define una función a llamar cuando la animación termina.
-	/// @param {Method} callback La función a ejecutar.
-    /// @return {Struct.SCurve} description
+	/// @desc Defines a callback to run when the Patrol enters the wait phase.
+	/// @param {Method} callback The callback function.
+	/// @return {Struct.SCurve} description
 	static OnWait = function(_callback)
 	{
 		__callback_wait = _callback;
 		return self;
 	}
 
-	/// @desc Callback que se ejecuta en cada repetición completada.
-    /// @return {Struct.SCurve} description
+	/// @desc Callback executed on every completed repeat.
+	/// @return {Struct.SCurve} description
 	static OnRepeat = function(_callback)
 	{
-	    __callback_repeat = _callback;
-	    return self;
+		__callback_repeat = _callback;
+		return self;
 	}
 
-	/// @desc Callback que se ejecuta cuando el delay inicial termina.
-    /// @return {Struct.SCurve} description
-	static OnDelayFinish = function(_callback)
+	/// @desc Callback executed when the initial delay ends.
+	/// @return {Struct.SCurve} description
+	static OnDelay = function(_callback)
 	{
-	    __callback_delay_finish = _callback;
-	    return self;
+		__callback_delay = _callback;
+		return self;
 	}
 
 		#region STATE QUERIES
 	
-	/// @desc Devuelve true si la animación está activa y no pausada.
+	/// @desc Returns true if the animation is active and not paused.
 	static IsPlaying = function()
 	{
-		if (!time_source_exists(__step)) return false;
-
-		return time_source_get_state(__step) == time_source_state_active && !__pause;
+		if (!time_source_exists(__step) ) return false;
+		return time_source_get_state(__step) == time_source_state_active;
 	}
 	
-	/// @desc Devuelve true si la animación está pausada.
+	/// @desc Returns true if the animation is paused.
 	static IsPaused = function()
 	{
-		return __pause;
+		if (!time_source_exists(__step) ) return false;
+		return time_source_get_state(__step) == time_source_state_paused;
 	}
 	
-	/// @desc Devuelve true si la animación ha terminado o ha sido detenida.
+	/// @desc Returns true if the animation has finished or has been stopped.
 	static IsFinished = function()
 	{
-		if (!time_source_exists(__step)) return true;
-
-		return time_source_get_state(__step) == time_source_state_stopped;
+		if (!time_source_exists(__step) ) return true;
+		return (time_source_get_state(__step) == time_source_state_stopped);
 	}
 	
-	/// @desc Devuelve true si la animación está en su fase de retraso inicial.
+	/// @desc Returns true while the animation is usable (not destroyed and still holding a time source).
+	static IsValid = function()
+	{
+		return !__destroyed && time_source_exists(__step);
+	}
+
+	/// @desc Returns true if the animation is in its initial delay phase.
 	static IsDelaying = function()
 	{
 		return __is_delaying;
 	}
 
-	/// @desc Devuelve true si la animación está configurada para reproducirse en reversa.
+	/// @desc Returns true if the animation is configured to play in reverse.
 	static IsReversed = function()
 	{
 		return __is_reversed;
 	}
 	
-	/// @desc Devuelve el tipo de animación ("once" o "patrol").
+		#endregion
+
+		#region GETTERS
+
+	/// @desc Returns the animation type ("to" or "patrol").
 	static GetType = function()
 	{
 		return __type;
 	}
 	
-	/// @desc Si es un Patrol, devuelve su estado actual ("go", "wait", "back").
+	/// @desc If this is a Patrol, returns its current state ("go", "wait", "back").
 	static GetPatrolState = function()
 	{
 		return (__type == SC_TYPE_PATROL) ? __patrol_state : undefined;
 	}
 	
-	/// @desc Devuelve el progreso normalizado (0-1) del segmento actual.
+	/// @desc Returns semantic progress for the current animation direction.
+	///       To: 0..1 forward, 0..-1 reverse.
+	///       Patrol: 0..1 forward, 1/-1 while waiting, 0..-1 backward.
 	static GetProgress = function()
 	{
-		return __value;
+		switch (__type)
+		{
+			case SC_TYPE_TO: return __is_reversed ? -__progress : __progress;
+
+			case SC_TYPE_PATROL:
+				switch (__patrol_state)
+				{
+					case SC_PATROL_MODE_GO:	return __progress;
+					case SC_PATROL_MODE_WAIT:	return __is_reversed ? -1 : 1;
+					case SC_PATROL_MODE_BACK:	return -__progress;
+				}
+			break;
+		}
+
+		return __progress;
+	}
+
+	/// @desc Returns the raw normalized progress (0-1) of the current phase.
+	static GetPhaseProgress = function()
+	{
+		return __progress;
 	}
 	
-	/// @desc Devuelve el número de repeticiones completadas.
+	/// @desc Returns the number of completed repeats.
 	static GetRepeatCount = function()
 	{
 		return __repeat_count;
 	}
 
-	/// @desc Comprueba si la animación tiene una etiqueta específica.
+	/// @desc Checks whether the animation has a specific tag.
 	static HasTag = function(_tag)
 	{
 		return array_get_index(__tags, _tag) > -1;
@@ -915,6 +1424,16 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	#endregion
 }
 
-
-// Iniciar statics
+// Initialize statics.
 script_execute(SCMaster);
+
+if (debug_mode)
+{
+	__scurve_alert($"Debug mode enabled.");
+
+	/// @ignore
+	global.__scurve_master__ = static_get(SCMaster);
+	
+	/// @ignore
+	global.__scurve_instances__ = static_get(SCurve);
+}

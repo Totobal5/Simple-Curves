@@ -2,7 +2,7 @@
   "$GMProject":"v1",
   "%Name":"Simple Curves",
   "AudioGroups":[
-    {"$GMAudioGroup":"","%Name":"audiogroup_default","name":"audiogroup_default","resourceType":"GMAudioGroup","resourceVersion":"2.0","targets":-1,},
+    {"$GMAudioGroup":"v1","%Name":"audiogroup_default","exportDir":"","name":"audiogroup_default","resourceType":"GMAudioGroup","resourceVersion":"2.0","targets":-1,},
   ],
   "configs":{
     "children":[],
@@ -10,23 +10,27 @@
   },
   "defaultScriptType":1,
   "Folders":[
-    {"$GMFolder":"","%Name":"Extensions","folderPath":"folders/Extensions.yy","name":"Extensions","resourceType":"GMFolder","resourceVersion":"2.0",},
-    {"$GMFolder":"","%Name":"Simple Curves","folderPath":"folders/Extensions/Simple Curves.yy","name":"Simple Curves","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Rooms","folderPath":"folders/Rooms.yy","name":"Rooms","resourceType":"GMFolder","resourceVersion":"2.0",},
+    {"$GMFolder":"","%Name":"Simple Curves","folderPath":"folders/Simple Curves.yy","name":"Simple Curves","resourceType":"GMFolder","resourceVersion":"2.0",},
   ],
-  "ForcedPrefabProjectReferences":[],
+  "ForcedPrefabProjectReferences":[
+    {"link":"cyou.tobalsea.ytrace-1.0.1","name":"cyou.tobalsea.ytrace-1.0.1","path":"cyou.tobalsea.ytrace-1.0.1.yyp",},
+  ],
   "IncludedFiles":[],
   "isEcma":false,
   "LibraryEmitters":[],
   "MetaData":{
-    "IDEVersion":"2024.14.3.217",
+    "IDEVersion":"2026.100.0.1171",
   },
   "name":"Simple Curves",
   "resources":[
     {"id":{"name":"Simple_Curves_Animation","path":"animcurves/Simple_Curves_Animation/Simple_Curves_Animation.yy",},},
     {"id":{"name":"Simple_Curves_License","path":"notes/Simple_Curves_License/Simple_Curves_License.yy",},},
+    {"id":{"name":"Simple_Curves_Readme","path":"notes/Simple_Curves_Readme/Simple_Curves_Readme.yy",},},
     {"id":{"name":"o_iamfade","path":"objects/o_iamfade/o_iamfade.yy",},},
     {"id":{"name":"r_test","path":"rooms/r_test/r_test.yy",},},
+    {"id":{"name":"Simple_Curves_Functions","path":"scripts/Simple_Curves_Functions/Simple_Curves_Functions.yy",},},
+    {"id":{"name":"Simple_Curves_Settings","path":"scripts/Simple_Curves_Settings/Simple_Curves_Settings.yy",},},
     {"id":{"name":"Simple_Curves","path":"scripts/Simple_Curves/Simple_Curves.yy",},},
     {"id":{"name":"sp_iamfade","path":"sprites/sp_iamfade/sp_iamfade.yy",},},
   ],

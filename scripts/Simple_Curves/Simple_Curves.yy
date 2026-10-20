@@ -6,7 +6,7 @@
   "name":"Simple_Curves",
   "parent":{
     "name":"Simple Curves",
-    "path":"folders/Extensions/Simple Curves.yy",
+    "path":"folders/Simple Curves.yy",
   },
   "resourceType":"GMScript",
   "resourceVersion":"2.0",

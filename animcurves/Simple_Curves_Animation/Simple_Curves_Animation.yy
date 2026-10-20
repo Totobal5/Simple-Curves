@@ -62,7 +62,7 @@
   "name":"Simple_Curves_Animation",
   "parent":{
     "name":"Simple Curves",
-    "path":"folders/Extensions/Simple Curves.yy",
+    "path":"folders/Simple Curves.yy",
   },
   "resourceType":"GMAnimCurve",
   "resourceVersion":"2.0",
