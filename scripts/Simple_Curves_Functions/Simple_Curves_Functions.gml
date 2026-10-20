@@ -35,37 +35,18 @@ function is_scurve(_struct)
 }
 
 /// @ignore
-/// @desc Strips the prefab prefix from a trace origin.
-///       A prefab origin looks like "cyou_tobalsea_scurves_1_1_0_Simple_Curves_Functions:43";
-///       the result keeps only "Simple_Curves_Functions:43". Origins from a plain project are returned untouched.
+/// @desc Removes the prefab prefix from a trace origin.
+///       "cyou_tobalsea_scurves_1_1_0_Simple_Curves_Functions:43" becomes "Simple_Curves_Functions:43".
 /// @param {String} _origin The raw trace origin.
-/// @return {String} The cleaned origin.
+/// @return {String} The origin, stripped when it carries the package prefix.
 function __scurve_strip_origin(_origin)
 {
-	var _prefix = "cyou_tobalsea_scurves_";
-
-	// Not running from the prefab: nothing to strip.
-	if (string_pos(_prefix, _origin) != 1) return _origin;
-
-	var _rest = string_delete(_origin, 1, string_length(_prefix) );
-
-	// Drop the version segment ("1_1_0_") the prefab injects before the script name.
-	var _skip = 0;
-	repeat(string_length(_rest) )
-	{
-		var _code = ord(string_char_at(_rest, _skip + 1) );
-
-		// Digits and underscores belong to the version; anything else starts the script name.
-		if ( (_code < 48 || _code > 57) && _code != 95) break;
-
-		_skip++;
-	}
-
-	return string_delete(_rest, 1, _skip);
+	var _script = string_pos("Simple_Curves", _origin);
+	return (_script > 1) ? string_delete(_origin, 1, _script - 1) : _origin;
 }
 
 /// @ignore
-/// @desc Returns the caller origin with the package prefix stripped, keeping log lines readable across versions.
+/// @desc Returns the caller origin with the package prefix stripped, keeping log lines readable.
 /// @return {String} The cleaned caller origin.
 function __scurve_origin()
 {
