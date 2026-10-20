@@ -5,9 +5,7 @@ function __scurve_alert(_msg)
 {
 	if (SC_LOG_ALERTS)
 	{
-		var _origin = ytrace_origin;
-		_origin = string_replace_all(_origin, "cyou_tobalsea_scurves_1_0_0___", "tobalsea_scurves_");
-		show_debug_message($"Simple-Curves Alert:: {_origin}: {_msg}");
+		show_debug_message($"Simple-Curves Alert:: {__scurve_origin()}: {_msg}");
 	}
 }
 
@@ -18,8 +16,7 @@ function __scurve_error(_msg)
 {
 	if (SC_LOG_ERRORS || SC_FATAL_ERRORS)
 	{
-		var _origin = ytrace_origin;
-		_origin = string_replace_all(_origin, "cyou_tobalsea_scurves_1_0_0___", "tobalsea_scurves_");
+		var _origin = __scurve_origin();
 
 		show_debug_message($"Simple-Curves Error:: {_origin}: {_msg}");
 		// If strict mode is enabled crash the game with an error message to avoid silent failures.
@@ -33,4 +30,13 @@ function __scurve_error(_msg)
 function is_scurve(_struct)
 {
 	return is_instanceof(_struct, SCurve);
+}
+
+/// @ignore
+/// @desc Returns the caller origin with the package prefix stripped, keeping log lines readable across versions.
+/// @return {String} The cleaned caller origin.
+function __scurve_origin()
+{
+	var _prefix = "cyou_tobalsea_scurves_" + string_replace_all(SC_VERSION, ".", "_") + "___";
+	return string_replace_all(ytrace_origin, _prefix, "tobalsea_scurves_");
 }

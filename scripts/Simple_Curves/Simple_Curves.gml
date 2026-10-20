@@ -142,15 +142,37 @@ function SCMaster()
 	/// @desc Pauses all active animations.
 	static PauseAll = function()
 	{
-		array_foreach(__list, function(_scurve) { _scurve.Pause(); });
+		for (var i = array_length(__list) - 1; i >= 0; i--) __list[i].Pause();
 		return self;
 	}
-	
+
 	/// @desc Resumes all paused animations.
 	static ResumeAll = function()
 	{
-		array_foreach(__list, function(_scurve) { _scurve.Resume(); });
+		for (var i = array_length(__list) - 1; i >= 0; i--) __list[i].Resume();
 		return self;
+	}
+
+	/// @desc Stops all active animations. They can be restarted with Play().
+	static StopAll = function()
+	{
+		for (var i = array_length(__list) - 1; i >= 0; i--) __list[i].Stop();
+		return self;
+	}
+
+	/// @desc Destroys every registered animation and releases its resources.
+	static DestroyAll = function()
+	{
+		// Destroy() unregisters, so iterate from the end while the list shrinks.
+		for (var i = array_length(__list) - 1; i >= 0; i--) __list[i].Destroy();
+		return self;
+	}
+
+	/// @desc Returns how many animations are currently registered.
+	/// @return {Real} Number of registered animations.
+	static Count = function()
+	{
+		return array_length(__list);
 	}
 	
 	/// @desc Sets a global time scale for all animations.
@@ -251,6 +273,11 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	__destroyed = false;
 
 	/// @ignore
+	/// @type {Bool}
+	/// @desc True when the captured start values belong to a previous target.
+	__needs_init = false;
+
+	/// @ignore
 	/// @type {Real}
 	/// @desc The unique identifier counter for SCurve instances.
 	static __id_count = 0;
@@ -265,8 +292,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 	/// @ignore
 	/// @type {String}
-	/// @desc The type of animation: SC_TYPE_TO or SC_TYPE_PATROL.
-	__type = "";
+	/// @desc The type of animation: SC_TYPE.TO or SC_TYPE.PATROL.
+	__type = SC_TYPE.NONE;
 
 	/// @ignore
 	/// @type {Real}
@@ -334,7 +361,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 	/// @ignore
 	/// @type {Array<Struct.SCurve.__Property>}
-	/// @desc Array of structs: { name: "x", start: 0, finish: 500 }
+	/// @desc One __Property struct per animated variable.
 	__properties = [];
 	
 	/// @ignore
@@ -346,8 +373,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	__delay_between = 0;
 	
 	/// @ignore 
-	/// @desc States: SC_PATROL_MODE_GO, SC_PATROL_MODE_WAIT, SC_PATROL_MODE_BACK
-	__patrol_state = SC_PATROL_MODE_GO;
+	/// @desc States: SC_PATROL_MODE.GO, SC_PATROL_MODE.WAIT, SC_PATROL_MODE.BACK
+	__patrol_state = SC_PATROL_MODE.GO;
 	
 	/// @ignore
 	/// @desc Total cycles to play. 1 = play once, -1 = infinite.
@@ -375,11 +402,6 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @ignore 
 	/// @desc Cached curve kind for the linear fast path.
 	__channel_is_linear = (__channel_index == SCURVE.LINEAR);
-
-	/// @ignore
-	/// @type {Struct.AnimCurveChannel}
-	/// @desc Cached curve struct for the backward phase in Patrol mode.
-	__channel_struct_back = undefined;
 	
 	#endregion
 
@@ -405,6 +427,15 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @ignore
 	/// @desc Callback triggered when the initial delay finishes, before the animation starts.
 	__callback_delay = undefined;
+
+	/// @ignore
+	/// @desc Callback triggered right after the animation starts.
+	__callback_start = undefined;
+
+	/// @ignore
+	/// @desc Callback triggered every frame after the values are applied, receiving the phase progress.
+	/// @param {Real} progress The current phase progress (0-1).
+	__callback_update = undefined;
 	
 	/// @ignore
 	/// @type {Struct.TimeSource}
@@ -426,8 +457,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 	/// @ignore
 	/// @desc Internal constructor used to store data for each property to animate.
-	/// @param {String} name The name of the property to animate.
-	/// @param {Any} finish The target value for the property.
+	/// @param {String} _name The name of the property to animate.
+	/// @param {Any} _finish The target value for the property (real or relative string).
 	static __Property = function(_name, _finish) constructor
 	{
 		if (!is_string(_name) || string_length(_name) == 0)
@@ -455,14 +486,6 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		/// @ignore
 		/// @desc The resolved end value for the property.
 		__finish = _finish;
-
-		/// @ignore
-		/// @desc The end value as configured for the return phase in Patrol mode. May be a relative string.
-		__finish_back_raw = undefined;
-
-		/// @ignore
-		/// @desc The resolved end value for the property when returning in Patrol mode.
-		__finish_back = undefined;
 
 		/// @ignore
 		/// @type {Bool}
@@ -527,7 +550,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		switch (__type)
 		{
 			// Single-cycle animation logic
-			case SC_TYPE_TO:
+			case SC_TYPE.TO:
 				__phase_time += _scaled_delta;
 				__progress = __phase_time / __phase_duration;
 				
@@ -543,10 +566,10 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			break;
 			
 			// Patrol mode logic
-			case SC_TYPE_PATROL:
+			case SC_TYPE.PATROL:
 				switch (__patrol_state)
 				{
-					case SC_PATROL_MODE_GO:
+					case SC_PATROL_MODE.GO:
 						__phase_time += _scaled_delta;
 						__progress = __phase_time / __phase_duration;
 						if (__progress >= 1)
@@ -556,7 +579,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 							__progress = 1;
 							__Apply(1, __channel_struct);
 
-							__patrol_state = SC_PATROL_MODE_WAIT;
+							__patrol_state = SC_PATROL_MODE.WAIT;
 							__phase_time = _go_overflow;
 							if (is_callable(__callback_wait) ) __callback_wait();
 						}
@@ -566,18 +589,18 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 						}
 					break;
 					
-					case SC_PATROL_MODE_WAIT:
+					case SC_PATROL_MODE.WAIT:
 						__phase_time += _scaled_delta;
 						if (__phase_time >= __delay_between)
 						{
 							var _wait_overflow = __phase_time - __delay_between;
-							__SetPatrolPhase(SC_PATROL_MODE_BACK, false, 1);
+							__SetPatrolPhase(SC_PATROL_MODE.BACK, false, 1);
 							__phase_time = _wait_overflow;
 							if (is_callable(__callback_back) ) __callback_back();
 						}
 					break;
 					
-					case SC_PATROL_MODE_BACK:
+					case SC_PATROL_MODE.BACK:
 						__phase_time += _scaled_delta;
 						__progress = __phase_time / __phase_duration;
 						if (__progress >= 1)
@@ -585,12 +608,15 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 							__progress = 1;
 							_animation_finished = true;
 						}
-						__Apply(__progress, __channel_struct_back ?? __channel_struct);
+						__Apply(__progress, __channel_struct);
 					break;
 				}
 			break;
 		}
-		
+
+		// Notify the update callback with the progress that was just applied.
+		if (is_callable(__callback_update) ) __callback_update(__progress);
+
 		// Repeat logic at the end of the cycle
 		if (!_animation_finished) exit;
 
@@ -728,8 +754,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		{
 			var _prop = __properties[i++];
 			var _current = __GetTargetValue(_prop.__hash);
-			var _is_forward = __is_reversed ? (_target_state == SC_PATROL_MODE_BACK) : (_target_state == SC_PATROL_MODE_GO);
-			var _target = _is_forward ? _prop.__finish : (_prop.__finish_back ?? _prop.__start);
+			var _is_forward = __is_reversed ? (_target_state == SC_PATROL_MODE.BACK) : (_target_state == SC_PATROL_MODE.GO);
+			var _target = _is_forward ? _prop.__finish : _prop.__start;
 			var _full_from = _is_forward ? _prop.__start : _prop.__finish;
 
 			if (!is_real(_current) || !is_real(_target) || !is_real(_full_from)) continue;
@@ -768,17 +794,17 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	static __SetPatrolPhase = function(_state, _from_current = false, _duration_ratio = 1)
 	{
 		var _ratio = clamp(_duration_ratio, 0, 1);
-		var _is_forward = __is_reversed ? (_state == SC_PATROL_MODE_BACK) : (_state == SC_PATROL_MODE_GO);
+		var _is_forward = __is_reversed ? (_state == SC_PATROL_MODE.BACK) : (_state == SC_PATROL_MODE.GO);
 		__patrol_state = _state;
 		__phase_time = 0;
-		__phase_duration = max(SC_MIN_PHASE_DURATION, (_state == SC_PATROL_MODE_GO ? __duration : __duration_back) * _ratio);
+		__phase_duration = max(SC_MIN_PHASE_DURATION, (_state == SC_PATROL_MODE.GO ? __duration : __duration_back) * _ratio);
 		__progress = 0;
 
 		var i = 0; repeat(array_length(__properties) )
 		{
 			var _prop = __properties[i++];
 			_prop.__phase_from = _from_current ? __GetTargetValue(_prop.__hash) : (_is_forward ? _prop.__start : _prop.__finish);
-			_prop.__phase_to = _is_forward ? _prop.__finish : (_prop.__finish_back ?? _prop.__start);
+			_prop.__phase_to = _is_forward ? _prop.__finish : _prop.__start;
 			_prop.__phase_delta = _prop.__phase_to - _prop.__phase_from;
 		}
 	}
@@ -792,12 +818,12 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 		switch (__type)
 		{
-			case SC_TYPE_TO:
+			case SC_TYPE.TO:
 				__SetToPhase(__is_reversed, false, 1);
 			break;
 
-			case SC_TYPE_PATROL:
-				__SetPatrolPhase(SC_PATROL_MODE_GO, false, 1);
+			case SC_TYPE.PATROL:
+				__SetPatrolPhase(SC_PATROL_MODE.GO, false, 1);
 			break;
 		}
 	}
@@ -880,7 +906,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		if (!__HasValidTarget() )
 		{
 			__scurve_error("Cannot initialize the animation properties: the target does not exist.");
-			return;
+			return false;
 		}
 
 		var i = 0; repeat(array_length(__properties) )
@@ -899,14 +925,11 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 
 			// Always resolve from the raw configuration so Refresh() can recalculate relative values.
 			_prop.__finish = __ResolveEnd(_prop.__finish_raw, _prop.__start);
-
-			if (__type == SC_TYPE_PATROL)
-			{
-				_prop.__finish_back = __ResolveEnd(_prop.__finish_back_raw, _prop.__finish);
-			}
 		}
 
 		__PreparePhase();
+
+		return true;
 	}
 	
 	#endregion
@@ -923,7 +946,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			return self;
 		}
 
-		if (__type == "")
+		if (__type == SC_TYPE.NONE)
 		{
 			__scurve_error("Cannot Play() before configuring '.To()' or '.Patrol()'.");
 			return self;
@@ -943,17 +966,21 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			// Restart the cycle counter on every new run.
 			__repeat_count = 0;
 
-			// Only initialize properties on the first run.
-			if (_time_state == time_source_state_initial)
+			// Capture start values on the first run and whenever the target changed.
+			if (_time_state == time_source_state_initial || __needs_init)
 			{
-				__InitProps();
+				if (!__InitProps() ) return self;
+
+				__needs_init = false;
 			}
 			else
 			{
 				__PreparePhase();
 			}
-			
+
 			time_source_start(__step);
+
+			if (is_callable(__callback_start) ) __callback_start();
 		}
 		
 		if (SC_LOG_ALERTS_PLAY) 
@@ -977,7 +1004,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		}
 
 		__repeat_count = 0;
-		__InitProps();
+
+		if (__InitProps() ) __needs_init = false;
+
 		return self;
 	}
 	
@@ -1041,6 +1070,8 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		__callback_back = undefined;
 		__callback_repeat = undefined;
 		__callback_delay = undefined;
+		__callback_start = undefined;
+		__callback_update = undefined;
 
 		return self;
 	}
@@ -1050,8 +1081,24 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @return {Struct.SCurve} description
 	static Target = function(_target)
 	{	
+		if (__destroyed)
+		{
+			__scurve_error("Cannot change the target of a destroyed SCurve.");
+			return self;
+		}
+
+		if (time_source_exists(__step) && time_source_get_state(__step) == time_source_state_active)
+		{
+			__scurve_error("Cannot change the target of a running SCurve. Stop() it first.");
+			return self;
+		}
+
 		__target = _target;
 		__target_is_struct = is_struct(_target);
+
+		// The captured start values belong to the previous target.
+		__needs_init = true;
+
 		return self;
 	}
 
@@ -1059,7 +1106,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @param {Real} scale Speed multiplier (1=normal, 0.5=half, 2=double).
 	static TimeScale = function(_scale)
 	{
-		__time_scale = max(0, abs(_scale) );
+		__time_scale = max(0, _scale);
 		return self;
 	}
 
@@ -1080,9 +1127,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @return {Struct.SCurve} this instance
 	static To = function(_duration, _prop1, _end1)
 	{
-		if (__type != "")
+		if (__type != SC_TYPE.NONE)
 		{
-			__scurve_error($"Animation type ({__type}) is already defined. '.To()' and '.Patrol()' can only be called once.");
+			__scurve_error("An animation is already configured. '.To()' and '.Patrol()' can only be called once.");
 			return self;
 		}
 
@@ -1099,7 +1146,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			return self;
 		}
 
-		__type = SC_TYPE_TO;
+		__type = SC_TYPE.TO;
 		__duration = _duration;
 
 		for (var i = 1; i < argument_count; i += 2) { array_push(__properties, new __Property(argument[i], argument[i + 1]) ); }
@@ -1117,9 +1164,9 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @return {Struct.SCurve} this instance
 	static Patrol = function(_duration_go, _duration_back, _delay, _prop1, _end1)
 	{
-		if (__type != "")
+		if (__type != SC_TYPE.NONE)
 		{
-			__scurve_error($"Animation type ({__type}) is already defined. '.To()' and '.Patrol()' can only be called once.");
+			__scurve_error("An animation is already configured. '.To()' and '.Patrol()' can only be called once.");
 			return self;
 		}
 
@@ -1142,7 +1189,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			return self;
 		}
 
-		__type = SC_TYPE_PATROL;
+		__type = SC_TYPE.PATROL;
 		__duration = _duration_go;
 		__duration_back = _duration_back;
 		__delay_between = _delay;
@@ -1165,7 +1212,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		}
 		
 		// If the animation type is not defined, there's nothing to reverse.
-		if (__type == "") 
+		if (__type == SC_TYPE.NONE) 
 		{
 			__scurve_alert("Cannot reverse SCurve because the animation type is not defined. Use '.To()' or '.Patrol()' to define an animation first.");
 			return self;
@@ -1189,20 +1236,20 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		
 		switch (__type)
 		{
-			case SC_TYPE_TO:
+			case SC_TYPE.TO:
 				var _duration_ratio = __ComputeToPhaseRatio(__is_reversed);
 				__SetToPhase(__is_reversed, true, _duration_ratio);
 			break;
 
-			case SC_TYPE_PATROL:
-				if (__patrol_state != SC_PATROL_MODE_WAIT)
+			case SC_TYPE.PATROL:
+				if (__patrol_state != SC_PATROL_MODE.WAIT)
 				{
-					var _target_state = __is_reversed ? SC_PATROL_MODE_BACK : SC_PATROL_MODE_GO;
+					var _target_state = __is_reversed ? SC_PATROL_MODE.BACK : SC_PATROL_MODE.GO;
 					var _duration_ratio = __ComputePatrolPhaseRatio(_target_state);
 
 					if (_duration_ratio <= 0)
 					{
-						_target_state = (_target_state == SC_PATROL_MODE_GO) ? SC_PATROL_MODE_BACK : SC_PATROL_MODE_GO;
+						_target_state = (_target_state == SC_PATROL_MODE.GO) ? SC_PATROL_MODE.BACK : SC_PATROL_MODE.GO;
 						_duration_ratio = __ComputePatrolPhaseRatio(_target_state);
 					}
 
@@ -1275,7 +1322,22 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	/// @param {String} [tag2] ...and so on.
 	static Tag = function()
 	{
-		var i=0; repeat (argument_count) { array_push(__tags, argument[i++]); }
+		var i = 0; repeat(argument_count)
+		{
+			var _tag = argument[i++];
+
+			if (!is_string(_tag) || string_length(_tag) == 0)
+			{
+				__scurve_error("Tag() expects non-empty strings.");
+				continue;
+			}
+
+			// Ignore duplicates so tag-based control stays predictable.
+			if (HasTag(_tag) ) continue;
+
+			array_push(__tags, _tag);
+		}
+
 		return self;
 	}
 	
@@ -1322,7 +1384,25 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		return self;
 	}
 
-		#region STATE QUERIES
+	/// @desc Callback executed right after the animation starts.
+	/// @param {Method} _callback The callback function.
+	/// @return {Struct.SCurve} this instance
+	static OnStart = function(_callback)
+	{
+		__callback_start = _callback;
+		return self;
+	}
+
+	/// @desc Callback executed every frame after the values are applied.
+	/// @param {Method} _callback The callback function, receives the phase progress (0-1).
+	/// @return {Struct.SCurve} this instance
+	static OnUpdate = function(_callback)
+	{
+		__callback_update = _callback;
+		return self;
+	}
+
+	#region STATE QUERIES
 	
 	/// @desc Returns true if the animation is active and not paused.
 	static IsPlaying = function()
@@ -1363,20 +1443,20 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		return __is_reversed;
 	}
 	
-		#endregion
+	#endregion
 
-		#region GETTERS
+	#region GETTERS
 
-	/// @desc Returns the animation type ("to" or "patrol").
+	/// @desc Returns the animation type as an SC_TYPE value (SC_TYPE.NONE when not configured).
 	static GetType = function()
 	{
 		return __type;
 	}
-	
-	/// @desc If this is a Patrol, returns its current state ("go", "wait", "back").
+
+	/// @desc If this is a Patrol, returns its current SC_PATROL_MODE; otherwise undefined.
 	static GetPatrolState = function()
 	{
-		return (__type == SC_TYPE_PATROL) ? __patrol_state : undefined;
+		return (__type == SC_TYPE.PATROL) ? __patrol_state : undefined;
 	}
 	
 	/// @desc Returns semantic progress for the current animation direction.
@@ -1386,14 +1466,14 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 	{
 		switch (__type)
 		{
-			case SC_TYPE_TO: return __is_reversed ? -__progress : __progress;
+			case SC_TYPE.TO: return __is_reversed ? -__progress : __progress;
 
-			case SC_TYPE_PATROL:
+			case SC_TYPE.PATROL:
 				switch (__patrol_state)
 				{
-					case SC_PATROL_MODE_GO:	return __progress;
-					case SC_PATROL_MODE_WAIT:	return __is_reversed ? -1 : 1;
-					case SC_PATROL_MODE_BACK:	return -__progress;
+					case SC_PATROL_MODE.GO:	return __progress;
+					case SC_PATROL_MODE.WAIT:	return __is_reversed ? -1 : 1;
+					case SC_PATROL_MODE.BACK:	return -__progress;
 				}
 			break;
 		}
@@ -1419,7 +1499,7 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 		return array_get_index(__tags, _tag) > -1;
 	}
 	
-		#endregion
+	#endregion
 	
 	#endregion
 }

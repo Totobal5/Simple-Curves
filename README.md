@@ -77,8 +77,8 @@ var anim = new SCurve(SCURVE.ELASTIC);
 | `Target(target)` | Set instance or struct to animate |
 | `To(duration, prop1, end1, ...)` | Configure one-way tween |
 | `Patrol(duration_go, duration_back, delay, prop1, end1, ...)` | Configure go/wait/back tween |
-| `Delay(seconds)` | Initial delay before movement starts |
-| `TimeScale(scale)` | Per-tween speed multiplier |
+| `Delay(seconds)` | Initial delay before movement starts (applied at the start of every cycle) |
+| `TimeScale(scale)` | Per-tween speed multiplier (`<= 0` freezes the tween) |
 | `Repeat(count=-1)` | Total cycles (`1` = play once, `-1` = infinite) |
 | `Launch(tween, on_repeat, ...)` | Launch one or more tweens at finish or on a given cycle |
 | `DestroyOnFinish(destroy=true)` | Toggle auto-destroy on finish |
@@ -93,6 +93,8 @@ var anim = new SCurve(SCURVE.ELASTIC);
 | `OnFinish(callback)` | Callback when tween fully finishes |
 | `OnRepeat(callback)` | Callback after each completed repeat |
 | `OnDelay(callback)` | Callback when initial delay ends |
+| `OnStart(callback)` | Callback right after the tween starts playing |
+| `OnUpdate(callback)` | Callback after each frame values are applied (receives progress) |
 | `OnWait(callback)` | Patrol callback when entering wait |
 | `OnBack(callback)` | Patrol callback when starting back phase |
 | `IsPlaying()` | True if currently active |
@@ -101,8 +103,8 @@ var anim = new SCurve(SCURVE.ELASTIC);
 | `IsValid()` | True while the tween is alive (not destroyed) |
 | `IsDelaying()` | True while initial delay is active |
 | `IsReversed()` | True if reverse mode is enabled |
-| `GetType()` | Returns `"to"` or `"patrol"` |
-| `GetPatrolState()` | Returns `"go"`, `"wait"`, `"back"` |
+| `GetType()` | Returns `SC_TYPE.TO`, `SC_TYPE.PATROL` or `SC_TYPE.NONE` |
+| `GetPatrolState()` | Returns `SC_PATROL_MODE.GO`, `WAIT`, `BACK` (or `undefined`) |
 | `GetProgress()` | Semantic progress (direction-aware) |
 | `GetPhaseProgress()` | Raw progress for current phase (`0..1`) |
 | `GetRepeatCount()` | Number of completed cycles |
@@ -114,6 +116,9 @@ var anim = new SCurve(SCURVE.ELASTIC);
 |--------|-------------|
 | `PauseAll()` | Pause all registered tweens |
 | `ResumeAll()` | Resume all paused tweens |
+| `StopAll()` | Stop every registered tween |
+| `DestroyAll()` | Destroy every registered tween |
+| `Count()` | Number of registered tweens |
 | `SetGlobalTimeScale(scale)` | Global speed multiplier |
 | `GetGlobalTimeScale()` | Read global speed multiplier |
 | `PauseTag(tag)` | Pause all tweens with tag |
@@ -190,6 +195,11 @@ new SCurve(SCURVE.EASE)
 - `BOUNCE`
 - `FAST_SLOW`
 - `MID_SLOW`
+
+Animation type and patrol phase are also enums:
+
+- `SC_TYPE`: `NONE`, `TO`, `PATROL`
+- `SC_PATROL_MODE`: `GO`, `WAIT`, `BACK`
 
 ## Configuration
 

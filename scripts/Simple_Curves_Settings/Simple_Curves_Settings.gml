@@ -1,5 +1,5 @@
-#export SC_VERSION, SC_LOG_ALERTS, SC_LOG_ALERTS_PROPERTY, SC_LOG_ALERTS_PLAY, SC_LOG_ERRORS, SC_FATAL_ERRORS, SC_MIN_DELTA_FPS, SC_MIN_PHASE_DURATION, SC_PATROL_MODE_GO, SC_PATROL_MODE_WAIT, SC_PATROL_MODE_BACK, SC_LAUNCH_ON_FINISH, SC_TYPE_TO, SC_TYPE_PATROL
-#export SCURVE
+#export SC_VERSION, SC_LOG_ALERTS, SC_LOG_ALERTS_PROPERTY, SC_LOG_ALERTS_PLAY, SC_LOG_ERRORS, SC_FATAL_ERRORS, SC_MIN_DELTA_FPS, SC_MIN_PHASE_DURATION, SC_LAUNCH_ON_FINISH
+#export SCURVE, SC_TYPE, SC_PATROL_MODE
 
 /// @ignore [MAJOR.MINOR.PATCH]
 #macro SC_VERSION	"1.0.0"
@@ -25,23 +25,30 @@
 /// @ignore Minimum phase duration to avoid division by zero or extremely fast animations.
 #macro SC_MIN_PHASE_DURATION	0.000001
 
-/// @desc Patrol modes for SCurve animations.
-#macro SC_PATROL_MODE_GO		"go"
-
-/// @ignore 
-#macro SC_PATROL_MODE_WAIT		"wait"
-
 /// @ignore
-#macro SC_PATROL_MODE_BACK		"back"
-
-/// @ignore 
 #macro SC_LAUNCH_ON_FINISH		0
 
-/// @desc Animation type for a simple transition to a target value.
-#macro SC_TYPE_TO				"to"
+/// @desc Animation type of an SCurve.
+enum SC_TYPE
+{
+	/// @desc No animation configured yet.
+	NONE = -1,
+	/// @desc Single transition to the end value.
+	TO,
+	/// @desc Forward, wait and backward cycle.
+	PATROL
+}
 
-/// @desc Animation type for a simple transition to a target value.
-#macro SC_TYPE_PATROL			"patrol"
+/// @desc Patrol phase of an SCurve animation.
+enum SC_PATROL_MODE
+{
+	/// @desc Moving towards the end value.
+	GO,
+	/// @desc Holding at the end value.
+	WAIT,
+	/// @desc Returning to the start value.
+	BACK
+}
 
 /// @desc Ease curve types for SCurve animations.
 enum SCURVE
