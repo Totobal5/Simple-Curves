@@ -1,0 +1,29 @@
+{
+  "Version": "1.0",
+  "assets": [
+    {
+      "export": 2,
+      "name": "Simple_Curves"
+    },
+    {
+      "export": 2,
+      "name": "Simple_Curves_Animation"
+    },
+    {
+      "export": 2,
+      "name": "Simple_Curves_Functions"
+    },
+    {
+      "export": 2,
+      "name": "Simple_Curves_License"
+    },
+    {
+      "export": 2,
+      "name": "Simple_Curves_Readme"
+    },
+    {
+      "export": 2,
+      "name": "Simple_Curves_Settings"
+    }
+  ]
+}

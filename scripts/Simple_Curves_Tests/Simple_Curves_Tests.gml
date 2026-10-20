@@ -11,6 +11,7 @@ function __scurve_test_runner()
 	var _runner = new CrispyRunner("simple_curves");
 
 	__sc_test_suite(_runner, "config", "test_config_");
+	__sc_test_suite(_runner, "log", "test_log_");
 	__sc_test_suite(_runner, "guards", "test_guard_");
 	__sc_test_suite(_runner, "relative", "test_relative_");
 	__sc_test_suite(_runner, "tags", "test_tag_");
@@ -218,6 +219,49 @@ function test_config_curve_channels_are_distinct()
 			AssertFalse(_is_duplicate, $"Channels {i} and {j} must not be identical easings");
 		}
 	}
+}
+
+#endregion
+
+#region LOG
+
+/// @desc The prefab prefix is stripped so log lines start at the script name.
+function test_log_strips_prefab_prefix()
+{
+	AssertEqual(
+		__scurve_strip_origin("cyou_tobalsea_scurves_1_1_0_Simple_Curves_Functions:43"),
+		"Simple_Curves_Functions:43"
+	);
+
+	AssertEqual(
+		__scurve_strip_origin("cyou_tobalsea_scurves_1_0_0_Simple_Curves:812"),
+		"Simple_Curves:812"
+	);
+}
+
+/// @desc The stripping must not depend on the version, including multi-digit segments.
+function test_log_strips_any_version()
+{
+	AssertEqual(
+		__scurve_strip_origin("cyou_tobalsea_scurves_2_10_3_Simple_Curves_Settings:5"),
+		"Simple_Curves_Settings:5"
+	);
+}
+
+/// @desc Origins from a plain project are returned untouched.
+function test_log_keeps_plain_origin()
+{
+	AssertEqual(__scurve_strip_origin("Simple_Curves_Functions:43"), "Simple_Curves_Functions:43");
+	AssertEqual(__scurve_strip_origin("obj_player:12"), "obj_player:12");
+}
+
+/// @desc A non-prefab origin is never truncated, even if it contains the package name.
+function test_log_ignores_prefix_in_the_middle()
+{
+	AssertEqual(
+		__scurve_strip_origin("scr_custom_cyou_tobalsea_scurves_1_1_0_x:7"),
+		"scr_custom_cyou_tobalsea_scurves_1_1_0_x:7"
+	);
 }
 
 #endregion

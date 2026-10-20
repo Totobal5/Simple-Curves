@@ -1,3 +1,5 @@
+#export SCMaster, SCurve
+
 /// @desc Singleton manager used to control all SCurve animations.
 function SCMaster()
 {
@@ -1033,9 +1035,10 @@ function SCurve(_curve, _destroy_on_finish=true) constructor
 			if (is_callable(__callback_start) ) __callback_start();
 		}
 		
-		if (SC_LOG_ALERTS_PLAY) 
+		// Only worth an alert when Play() did nothing because the tween was already running.
+		if (SC_LOG_ALERTS_PLAY && _time_state != time_source_state_initial && _time_state != time_source_state_stopped)
 		{
-			__scurve_alert($"Play() called while the time source was in state {_time_state}.");
+			__scurve_alert($"Play() ignored: the tween is already running (time source state {_time_state}).");
 		}
 		
 		return self;		

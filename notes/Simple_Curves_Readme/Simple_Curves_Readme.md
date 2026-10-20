@@ -291,7 +291,8 @@ Suites:
 
 | Suite | Covers |
 |-------|--------|
-| `config` | Defaults, animation types, chainability and `is_scurve()` |
+| `config` | Defaults, animation types, chainability, `is_scurve()` and the easing channels |
+| `log` | Origin cleanup: the prefab prefix is stripped from every log line, whatever the version |
 | `guards` | Contract violations: invalid durations, argument pairs, tags, repeat counts and target swaps |
 | `relative` | Absolute and relative end values, decimals, fallback and `Refresh()` recalculation |
 | `tags` | Tag storage plus `PauseTag`/`ResumeTag`/`StopTag`/`DestroyTag`/`TimeScaleTag` |
