@@ -2,7 +2,7 @@
 #export SCURVE, SC_TYPE, SC_PATROL_MODE
 
 /// @ignore [MAJOR.MINOR.PATCH]
-#macro SC_VERSION	"1.0.0"
+#macro SC_VERSION	"1.1.0"
 
 /// @ignore Show debug alerts for SCurve events (true/false).
 #macro SC_LOG_ALERTS			true

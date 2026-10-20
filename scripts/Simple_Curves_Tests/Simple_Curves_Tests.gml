@@ -161,6 +161,65 @@ function test_config_is_scurve()
 	AssertFalse(is_scurve(undefined) );
 }
 
+/// @desc Every easing channel must map the ends of the timeline onto exactly 0 and 1,
+///       otherwise a finished tween never lands on its end value.
+function test_config_curve_channels_are_normalized()
+{
+	var _index = 0;
+	var _channel = animcurve_get_channel(Simple_Curves_Animation, _index);
+
+	while (!is_undefined(_channel) )
+	{
+		AssertNear(animcurve_channel_evaluate(_channel, 0), 0, 0.000001, $"Channel {_index} must start at 0");
+		AssertNear(animcurve_channel_evaluate(_channel, 1), 1, 0.000001, $"Channel {_index} must end at 1");
+
+		_index++;
+		_channel = animcurve_get_channel(Simple_Curves_Animation, _index);
+	}
+
+	AssertTrue(_index > 0, "The animation curve must expose at least one channel");
+}
+
+/// @desc The SCURVE enum is coupled to the channel order by index, so both must have the same size.
+function test_config_curve_channels_match_enum()
+{
+	var _count = 0;
+	while (!is_undefined(animcurve_get_channel(Simple_Curves_Animation, _count) ) ) _count++;
+
+	AssertEqual(_count, SCURVE.MID_SLOW + 1, "The animation curve must declare one channel per SCURVE value, in order");
+}
+
+/// @desc Two SCURVE values must never resolve to the same easing shape.
+function test_config_curve_channels_are_distinct()
+{
+	var _count = 0;
+	while (!is_undefined(animcurve_get_channel(Simple_Curves_Animation, _count) ) ) _count++;
+
+	for (var i = 0; i < _count; i++)
+	{
+		var _first = animcurve_get_channel(Simple_Curves_Animation, i);
+
+		for (var j = i + 1; j < _count; j++)
+		{
+			var _second = animcurve_get_channel(Simple_Curves_Animation, j);
+			var _is_duplicate = true;
+
+			for (var s = 1; s < 20; s++)
+			{
+				var _t = s / 20;
+
+				if (abs(animcurve_channel_evaluate(_first, _t) - animcurve_channel_evaluate(_second, _t) ) > 0.0001)
+				{
+					_is_duplicate = false;
+					break;
+				}
+			}
+
+			AssertFalse(_is_duplicate, $"Channels {i} and {j} must not be identical easings");
+		}
+	}
+}
+
 #endregion
 
 #region GUARDS

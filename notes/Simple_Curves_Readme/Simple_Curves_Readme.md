@@ -180,19 +180,19 @@ new SCurve(SCURVE.EASE)
 
 ## Easing Channels
 
-`SCURVE` enum values:
+`SCURVE` enum values. The order matches the channels of the `Simple_Curves_Animation` curve, so new easings must be appended to both:
 
-- `LINEAR`
-- `EASE`
-- `CUBIC`
-- `QUART`
-- `EXPO`
-- `CIRC`
-- `BACK`
-- `ELASTIC`
-- `BOUNCE`
-- `FAST_SLOW`
-- `MID_SLOW`
+- `LINEAR` — constant speed
+- `EASE` — quick start, gentle landing
+- `CUBIC` — same shape as `EASE`, stronger
+- `QUART` — same shape as `EASE`, strongest
+- `EXPO` — very quick start, long landing
+- `CIRC` — quick start, circular landing
+- `BACK` — overshoots slightly before settling
+- `ELASTIC` — overshoots and oscillates before settling
+- `BOUNCE` — decelerates with a small bounce at the end
+- `FAST_SLOW` — fast start, slow finish
+- `MID_SLOW` — fast start, slow middle, fast finish
 
 Animation type and patrol phase are also enums:
 
